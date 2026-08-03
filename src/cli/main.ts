@@ -36,18 +36,26 @@ program
 // ============================================================
 program
   .command('run')
-  .description('运行完整变更影响测试流程 (支持多项目，逗号分隔)')
-  .requiredOption('-p, --project <paths>', '被测项目路径或 Git URL (支持多项目逗号分隔)')
-  .requiredOption('-b, --base <refs>', '基线版本 (与 --project 一一对应，逗号分隔)')
-  .requiredOption('-t, --target <refs>', '目标版本 (与 --project 一一对应，逗号分隔)')
+  .description('运行完整变更影响测试流程 (支持 --resume 从 Step 2 续跑)')
+  .option('-p, --project <paths>', '被测项目路径或 Git URL (--resume 时不需要)')
+  .option('-b, --base <refs>', '基线版本 (与 --project 一一对应)')
+  .option('-t, --target <refs>', '目标版本 (与 --project 一一对应)')
   .requiredOption('-u, --base-url <url>', '被测应用 URL')
   .option('--headed', '有头模式运行浏览器')
   .option('-o, --output <dir>', '输出目录', 'test-output')
   .option('--pages <routes>', '手动指定页面路由 (逗号分隔)')
   .option('--no-cleanup', '保留远程仓库克隆 (默认 pipeline 结束后自动清理)')
+  .option('--resume', '跳过 Step 1 (diff 已存在)，从 Step 2 续跑')
   .action(async (options) => {
     try {
-      const projects = parseProjects(options.project, options.base, options.target);
+      if (!options.resume) {
+        if (!options.project || !options.base || !options.target) {
+          throw new Error('--project, --base, --target are required (unless --resume)');
+        }
+      }
+      const projects = options.resume
+        ? []
+        : parseProjects(options.project || '', options.base || '', options.target || '');
       await pipelineCommand({
         projects,
         baseUrl: options.baseUrl,
@@ -55,6 +63,7 @@ program
         output: options.output,
         pages: options.pages ? options.pages.split(',').map((s: string) => s.trim()) : undefined,
         cleanup: options.cleanup,
+        resume: options.resume,
       });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);

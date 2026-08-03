@@ -14,13 +14,19 @@ export interface PipelineOptions {
   output?: string;
   pages?: string[];
   cleanup?: boolean;
+  /** Skip Step 1 (diff already extracted), start from Step 2 */
+  resume?: boolean;
 }
 
 /**
  * Full pipeline: diff → (AI analysis → browse → AI test gen) → execute → report
+ *
+ * Step 2 (AI analysis) and Step 4 (AI test generation) are Claude Code skills:
+ *   /e2e-analyze   — reads diff/, writes analysis/impact.json
+ *   /e2e-generate  — reads analysis + pages/, writes tests/*.spec.ts
  */
 export async function pipelineCommand(options: PipelineOptions): Promise<void> {
-  const { projects, baseUrl, cleanup = true } = options;
+  const { projects, baseUrl, cleanup = true, resume = false } = options;
   const outputRoot = options.output || path.join(process.cwd(), 'test-output');
   const diffDir = path.join(outputRoot, 'diff');
   const analysisDir = path.join(outputRoot, 'analysis');
@@ -28,6 +34,7 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
   const testsDir = path.join(outputRoot, 'tests');
   const resultsDir = path.join(outputRoot, 'results');
   const cacheDir = path.join(outputRoot, '.repos');
+  const impactPath = path.join(analysisDir, 'impact.json');
 
   const hasRemote = projects.some(p => isRemoteUrl(p.path));
 
@@ -40,38 +47,44 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
     console.log(`Cleanup after pipeline: ${cleanup ? 'yes' : 'no'} (use --no-cleanup to keep)`);
   }
 
-  if (projects.length > 1) {
-    console.log(`\nMulti-project mode: ${projects.length} projects`);
-  }
   for (const p of projects) {
     const label = isRemoteUrl(p.path) ? `[remote] ${path.basename(p.path, '.git')}` : p.path;
     console.log(`  ${label}: ${p.baseRef} → ${p.targetRef}`);
   }
   console.log('');
 
-  // ---- Step 1: Extract Git Diff (all projects) ----
-  console.log('━━━ Step 1/6: Extracting Git Diff ━━━');
-  const { output: multiDiff } = await diffCommand({
-    projects,
-    output: diffDir,
-  });
-
-  // ---- Step 2: AI Impact Analysis ----
-  console.log(`\n📋 Step 2/6: AI Impact Analysis`);
-  console.log('   This step requires Claude Code to analyze the diff.');
-  console.log(`   Diff data is at: ${diffDir}/`);
-
-  if (projects.length > 1) {
-    console.log(`   Each project has its own subdirectory under ${diffDir}/`);
-    console.log(`   Aggregated summary: ${diffDir}/summary.json`);
-    console.log(`   Cross-project analysis: consider both frontend AND backend changes together.`);
+  // ---- Step 1: Extract Git Diff ----
+  if (!resume) {
+    console.log('━━━ Step 1/6: Extracting Git Diff ━━━');
+    await diffCommand({ projects, output: diffDir });
+  } else {
+    console.log('⏭️  Step 1/6: Skipped (--resume)');
+    if (!fs.existsSync(diffDir)) {
+      console.error(`Error: --resume requires existing diff data at ${diffDir}/`);
+      console.error('Run without --resume first.');
+      process.exit(1);
+    }
+    console.log(`   Using existing diff: ${diffDir}/`);
   }
 
-  console.log(`   Please ask Claude Code to read the diff files and`);
-  console.log(`   generate an impact analysis JSON at: ${analysisDir}/impact.json`);
+  // ---- Step 2: AI Impact Analysis ----
+  if (fs.existsSync(impactPath)) {
+    const existing = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
+    console.log(`\n⏭️  Step 2/6: Analysis already exists (${existing.affectedPages?.length || 0} affected pages)`);
+  } else {
+    console.log(`\n━━━ Step 2/6: AI Impact Analysis ━━━`);
+    console.log(`   Skill: /e2e-analyze`);
+    console.log(`   Input:  ${diffDir}/`);
+    console.log(`   Output: ${impactPath}`);
+    console.log(`\n   Claude Code reads the diff, applies 4-stage analysis`);
+    console.log(`   (file classification → code understanding → feature derivation → test scenarios),`);
+    console.log(`   and writes the structured impact.json.`);
+    console.log(`\n   Run /e2e-analyze now, then re-run with --resume to continue.`);
+    console.log(`\n⏸️  Pipeline paused — waiting for impact.json`);
+    return;
+  }
 
   // ---- Step 3: Browse Affected Pages ----
-  const impactPath = path.join(analysisDir, 'impact.json');
   let pagesToBrowse = options.pages || [];
   if (pagesToBrowse.length === 0 && fs.existsSync(impactPath)) {
     const analysis: ImpactAnalysis = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
@@ -91,26 +104,28 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
   }
 
   // ---- Step 4: AI Test Generation ----
-  console.log(`\n📋 Step 4/6: AI Test Generation`);
-  console.log(`   Page data is at: ${pagesDir}`);
-  console.log(`   Analysis is at: ${analysisDir}/impact.json`);
-  console.log(`   Generate tests at: ${testsDir}/`);
-  if (projects.length > 1) {
-    console.log(`   Consider cross-project impacts: backend API changes may affect frontend behavior.`);
+  const testFiles = fs.existsSync(testsDir) ? fs.readdirSync(testsDir).filter(f => f.endsWith('.spec.ts')) : [];
+  if (testFiles.length > 0) {
+    console.log(`\n⏭️  Step 4/6: Tests already exist (${testFiles.length} files)`);
+  } else {
+    console.log(`\n━━━ Step 4/6: AI Test Generation ━━━`);
+    console.log(`   Input:  ${analysisDir}/impact.json + ${pagesDir}/`);
+    console.log(`   Output: ${testsDir}/*.spec.ts`);
+    console.log(`\n   Claude Code reads the analysis and page DOM snapshots,`);
+    console.log(`   then generates Playwright test files with real selectors.`);
+    console.log(`\n   Run /e2e-generate to create tests, then re-run with --resume.`);
+    console.log(`\n⏸️  Pipeline paused — waiting for test files`);
+    return;
   }
 
   // ---- Step 5: Execute Tests ----
-  if (fs.existsSync(testsDir)) {
-    console.log(`\n━━━ Step 5/6: Executing Tests ━━━`);
-    await execTestsCommand({
-      testDir: testsDir,
-      baseUrl,
-      headed: options.headed,
-      output: outputRoot,
-    });
-  } else {
-    console.log(`\n⏭️  Step 5/6: Skipped (no tests to execute)`);
-  }
+  console.log(`\n━━━ Step 5/6: Executing Tests ━━━`);
+  await execTestsCommand({
+    testDir: testsDir,
+    baseUrl,
+    headed: options.headed,
+    output: outputRoot,
+  });
 
   // ---- Step 6: Generate Report ----
   console.log(`\n━━━ Step 6/6: Generating Report ━━━`);
