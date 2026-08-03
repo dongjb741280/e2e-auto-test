@@ -37,17 +37,17 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
 
   if (hasRemote) {
     console.log(`Remote repo(s) detected — will clone to ${path.resolve(cacheDir)}/`);
-    console.log(`Cleanup after pipeline: ${cleanup ? 'yes' : 'no'} (use --no-cleanup to keep)\n`);
+    console.log(`Cleanup after pipeline: ${cleanup ? 'yes' : 'no'} (use --no-cleanup to keep)`);
   }
 
   if (projects.length > 1) {
-    console.log(`Multi-project mode: ${projects.length} projects`);
-    for (const p of projects) {
-      const label = isRemoteUrl(p.path) ? `[remote] ${path.basename(p.path, '.git')}` : p.path;
-      console.log(`  ${label}: ${p.baseRef} → ${p.targetRef}`);
-    }
-    console.log('');
+    console.log(`\nMulti-project mode: ${projects.length} projects`);
   }
+  for (const p of projects) {
+    const label = isRemoteUrl(p.path) ? `[remote] ${path.basename(p.path, '.git')}` : p.path;
+    console.log(`  ${label}: ${p.baseRef} → ${p.targetRef}`);
+  }
+  console.log('');
 
   // ---- Step 1: Extract Git Diff (all projects) ----
   console.log('━━━ Step 1/6: Extracting Git Diff ━━━');
