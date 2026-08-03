@@ -10,6 +10,43 @@ export class GitDiffError extends Error {
   }
 }
 
+// ============================================================
+// Remote URL support
+// ============================================================
+
+const REMOTE_URL_RE = /^(https?:\/\/|git@|ssh:\/\/|\.git$)/;
+
+export function isRemoteUrl(value: string): boolean {
+  return REMOTE_URL_RE.test(value);
+}
+
+export function cloneRepo(url: string, cacheDir: string): string {
+  const repoName = url.split('/').pop()?.replace('.git', '') || 'repo';
+  const target = path.join(cacheDir, repoName);
+
+  if (fs.existsSync(target)) {
+    execSync(`git -C "${target}" fetch --all --tags --prune`, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    });
+    return target;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+  execSync(`git clone "${url}" "${target}"`, { stdio: 'inherit' });
+  return target;
+}
+
+export function clearCloneCache(cacheDir: string): void {
+  if (fs.existsSync(cacheDir)) {
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  }
+}
+
+// ============================================================
+// Git operations
+// ============================================================
+
 function runGit(projectPath: string, args: string): string {
   try {
     return execSync(`git -C "${projectPath}" ${args}`, {

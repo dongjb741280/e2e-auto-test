@@ -1,34 +1,47 @@
 import path from 'path';
 import fs from 'fs';
-import { extractDiff } from '../git/diff';
+import { extractDiff, isRemoteUrl, cloneRepo } from '../git/diff';
 import type { ProjectSpec, DiffOutput, MultiDiffOutput } from '../types';
 
 export interface DiffCommandOptions {
   projects: ProjectSpec[];
   output?: string;
+  cleanup?: boolean;
 }
 
 function projectDirName(spec: ProjectSpec): string {
-  // Derive a safe directory name from the project path
-  const basename = path.basename(spec.path);
+  const basename = path.basename(spec.path.replace(/\.git$/, ''));
   return basename || 'project';
 }
 
-export async function diffCommand(options: DiffCommandOptions): Promise<MultiDiffOutput> {
-  const { projects } = options;
+export async function diffCommand(options: DiffCommandOptions): Promise<{ output: MultiDiffOutput; resolvedProjects: ProjectSpec[] }> {
+  const { projects, cleanup = true } = options;
   const outputRoot = options.output || path.join(process.cwd(), 'test-output', 'diff');
 
+  const resolvedProjects: ProjectSpec[] = [];
   const results: DiffOutput[] = [];
 
   for (let i = 0; i < projects.length; i++) {
     const spec = projects[i];
+    let projectPath = spec.path;
+
+    // Resolve remote URL: clone to cache
+    if (isRemoteUrl(spec.path)) {
+      const cacheDir = path.join(process.cwd(), 'test-output', '.repos');
+      console.log(`Cloning: ${spec.path} ...`);
+      projectPath = cloneRepo(spec.path, cacheDir);
+      console.log(`  → ${projectPath}\n`);
+    }
+
+    resolvedProjects.push({ path: projectPath, baseRef: spec.baseRef, targetRef: spec.targetRef });
+
     const label = projects.length > 1 ? `[${projectDirName(spec)}] ` : '';
     const subDir = path.join(outputRoot, projectDirName(spec));
 
-    console.log(`${label}Project: ${spec.path}`);
+    console.log(`${label}Project: ${projectPath}`);
     console.log(`${label}Base: ${spec.baseRef} → Target: ${spec.targetRef}`);
 
-    const result = extractDiff(spec.path, spec.baseRef, spec.targetRef, subDir);
+    const result = extractDiff(projectPath, spec.baseRef, spec.targetRef, subDir);
 
     console.log(`${label}Files changed: ${result.stats.filesChanged}`);
     console.log(`${label}Additions: +${result.stats.additions}`);
@@ -42,12 +55,16 @@ export async function diffCommand(options: DiffCommandOptions): Promise<MultiDif
 
   // Print consolidated file list
   for (const r of results) {
-    const label = projects.length > 1 ? `[${projectDirName(projects[results.indexOf(r)])}] ` : '';
+    const idx = results.indexOf(r);
+    const label = projects.length > 1 ? `[${projectDirName(projects[idx])}] ` : '';
     if (r.files.length > 0) {
       console.log(`\n${label}Changed files:`);
-      for (const f of r.files) {
+      for (const f of r.files.slice(0, 100)) {
         const icon = f.status === 'added' ? 'A' : f.status === 'deleted' ? 'D' : f.status === 'renamed' ? 'R' : 'M';
         console.log(`  ${icon}  ${f.path}${f.oldPath ? ` (from ${f.oldPath})` : ''}`);
+      }
+      if (r.files.length > 100) {
+        console.log(`  ... and ${r.files.length - 100} more files`);
       }
     }
   }
@@ -69,5 +86,5 @@ export async function diffCommand(options: DiffCommandOptions): Promise<MultiDif
     JSON.stringify(consolidatedStats, null, 2)
   );
 
-  return { projects: results, stats: consolidatedStats };
+  return { output: { projects: results, stats: consolidatedStats }, resolvedProjects };
 }

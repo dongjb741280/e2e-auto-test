@@ -21,6 +21,13 @@ npx e2e-test run \
   --target v1.1.0 \
   --base-url http://localhost:3000
 
+# 远程 Git 仓库（自动 clone，结束后自动清理）
+npx e2e-test run \
+  --project "https://github.com/user/repo.git" \
+  --base v1.0.0 \
+  --target v1.1.0 \
+  --base-url http://localhost:3000
+
 # 前后端分离项目（逗号分隔，按索引一一对应）
 npx e2e-test run \
   --project /path/to/frontend,/path/to/backend \
@@ -35,13 +42,14 @@ npx e2e-test run \
 
 ```bash
 npx e2e-test run \
-  -p, --project <path>    # 被测项目路径 (git repo)
-  -b, --base <ref>        # 基线版本 (commit/branch/tag)
-  -t, --target <ref>      # 目标版本
-  -u, --base-url <url>    # 被测应用 URL
-  [--headed]              # 有头模式运行浏览器
-  [-o, --output <dir>]    # 输出目录 (默认: test-output)
-  [--pages <routes>]      # 手动指定页面路由 (逗号分隔)
+  -p, --project <path|url> # 本地路径或 Git URL (支持 https:// git@)
+  -b, --base <ref>         # 基线版本 (commit/branch/tag)
+  -t, --target <ref>       # 目标版本
+  -u, --base-url <url>     # 被测应用 URL
+  [--headed]               # 有头模式运行浏览器
+  [-o, --output <dir>]     # 输出目录 (默认: test-output)
+  [--pages <routes>]       # 手动指定页面路由 (逗号分隔)
+  [--no-cleanup]           # 保留远程仓库 clone 缓存
 ```
 
 ### `diff` — 提取 Git Diff

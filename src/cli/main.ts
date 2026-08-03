@@ -37,13 +37,14 @@ program
 program
   .command('run')
   .description('运行完整变更影响测试流程 (支持多项目，逗号分隔)')
-  .requiredOption('-p, --project <paths>', '被测项目路径 (多项目逗号分隔，如 frontend,backend)')
+  .requiredOption('-p, --project <paths>', '被测项目路径或 Git URL (支持多项目逗号分隔)')
   .requiredOption('-b, --base <refs>', '基线版本 (与 --project 一一对应，逗号分隔)')
   .requiredOption('-t, --target <refs>', '目标版本 (与 --project 一一对应，逗号分隔)')
   .requiredOption('-u, --base-url <url>', '被测应用 URL')
   .option('--headed', '有头模式运行浏览器')
   .option('-o, --output <dir>', '输出目录', 'test-output')
   .option('--pages <routes>', '手动指定页面路由 (逗号分隔)')
+  .option('--no-cleanup', '保留远程仓库克隆 (默认 pipeline 结束后自动清理)')
   .action(async (options) => {
     try {
       const projects = parseProjects(options.project, options.base, options.target);
@@ -53,6 +54,7 @@ program
         headed: options.headed,
         output: options.output,
         pages: options.pages ? options.pages.split(',').map((s: string) => s.trim()) : undefined,
+        cleanup: options.cleanup,
       });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);

@@ -4,6 +4,7 @@ import { diffCommand } from './diff';
 import { browseCommand } from './browse';
 import { execTestsCommand } from './exec-tests';
 import { reportCommand } from './report';
+import { isRemoteUrl, clearCloneCache } from '../git/diff';
 import type { ProjectSpec, ImpactAnalysis } from '../types';
 
 export interface PipelineOptions {
@@ -12,35 +13,45 @@ export interface PipelineOptions {
   headed?: boolean;
   output?: string;
   pages?: string[];
+  cleanup?: boolean;
 }
 
 /**
  * Full pipeline: diff → (AI analysis → browse → AI test gen) → execute → report
  */
 export async function pipelineCommand(options: PipelineOptions): Promise<void> {
-  const { projects, baseUrl } = options;
+  const { projects, baseUrl, cleanup = true } = options;
   const outputRoot = options.output || path.join(process.cwd(), 'test-output');
   const diffDir = path.join(outputRoot, 'diff');
   const analysisDir = path.join(outputRoot, 'analysis');
   const pagesDir = path.join(outputRoot, 'pages');
   const testsDir = path.join(outputRoot, 'tests');
   const resultsDir = path.join(outputRoot, 'results');
+  const cacheDir = path.join(outputRoot, '.repos');
+
+  const hasRemote = projects.some(p => isRemoteUrl(p.path));
 
   console.log('╔══════════════════════════════════════╗');
   console.log('║   E2E Change-Impact Test Pipeline   ║');
   console.log('╚══════════════════════════════════════╝\n');
 
+  if (hasRemote) {
+    console.log(`Remote repo(s) detected — will clone to ${path.resolve(cacheDir)}/`);
+    console.log(`Cleanup after pipeline: ${cleanup ? 'yes' : 'no'} (use --no-cleanup to keep)\n`);
+  }
+
   if (projects.length > 1) {
     console.log(`Multi-project mode: ${projects.length} projects`);
     for (const p of projects) {
-      console.log(`  ${path.basename(p.path)}: ${p.baseRef} → ${p.targetRef}`);
+      const label = isRemoteUrl(p.path) ? `[remote] ${path.basename(p.path, '.git')}` : p.path;
+      console.log(`  ${label}: ${p.baseRef} → ${p.targetRef}`);
     }
     console.log('');
   }
 
   // ---- Step 1: Extract Git Diff (all projects) ----
   console.log('━━━ Step 1/6: Extracting Git Diff ━━━');
-  const multiDiff = await diffCommand({
+  const { output: multiDiff } = await diffCommand({
     projects,
     output: diffDir,
   });
@@ -112,6 +123,12 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
     targetRef: projects.length === 1 ? projects[0].targetRef : projects.map(p => `${path.basename(p.path)}@${p.targetRef}`).join(', '),
     baseUrl,
   });
+
+  // Cleanup cloned repos
+  if (cleanup && hasRemote) {
+    console.log(`\n🧹 Cleaning up cloned repos: ${cacheDir}`);
+    clearCloneCache(cacheDir);
+  }
 
   console.log(`\n✅ Pipeline complete!`);
   console.log(`   Report: ${path.join(outputRoot, 'reports', 'change-report.md')}`);
