@@ -102,9 +102,9 @@ e2e-auto-test/
 │   ├── commands/
 │   │   ├── diff.ts           # Git diff 提取
 │   │   ├── browse.ts         # 页面 DOM 提取
-│   │   ├── execute.ts        # 测试执行
+│   │   ├── exec-tests.ts     # 测试执行
 │   │   ├── report.ts         # 报告生成
-│   │   └── run.ts            # 全流程编排
+│   │   └── pipeline.ts       # 全流程编排
 │   ├── git/diff.ts           # Git 操作封装
 │   ├── browser/
 │   │   ├── manager.ts        # Playwright 浏览器管理

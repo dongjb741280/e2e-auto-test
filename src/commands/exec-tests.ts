@@ -10,7 +10,7 @@ export interface ExecuteCommandOptions {
   output?: string;
 }
 
-export async function executeCommand(options: ExecuteCommandOptions): Promise<ExecutionResult[]> {
+export async function execTestsCommand(options: ExecuteCommandOptions): Promise<ExecutionResult[]> {
   const { testDir, baseUrl, headed = false } = options;
   const outputDir = options.output || path.join(process.cwd(), 'test-output');
 

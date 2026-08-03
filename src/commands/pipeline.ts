@@ -1,7 +1,7 @@
 import path from 'path';
 import { diffCommand } from './diff';
 import { browseCommand } from './browse';
-import { executeCommand } from './execute';
+import { execTestsCommand } from './exec-tests';
 import { reportCommand } from './report';
 import type { ImpactAnalysis } from '../types';
 
@@ -22,7 +22,7 @@ export interface RunCommandOptions {
  * which reads the intermediate files and writes structured JSON.
  * This command handles the deterministic engineering steps (1, 3, 5, 6).
  */
-export async function runCommand(options: RunCommandOptions): Promise<void> {
+export async function pipelineCommand(options: RunCommandOptions): Promise<void> {
   const outputRoot = options.output || path.join(process.cwd(), 'test-output');
   const diffDir = path.join(outputRoot, 'diff');
   const analysisDir = path.join(outputRoot, 'analysis');
@@ -86,7 +86,7 @@ export async function runCommand(options: RunCommandOptions): Promise<void> {
   // ---- Step 5: Execute Tests ----
   if (fs.existsSync(testsDir)) {
     console.log(`\n━━━ Step 5/6: Executing Tests ━━━`);
-    await executeCommand({
+    await execTestsCommand({
       testDir: testsDir,
       baseUrl: options.baseUrl,
       headed: options.headed,

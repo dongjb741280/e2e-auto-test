@@ -3,9 +3,9 @@
 import { Command } from 'commander';
 import { diffCommand } from '../commands/diff';
 import { browseCommand } from '../commands/browse';
-import { executeCommand } from '../commands/execute';
+import { execTestsCommand } from '../commands/exec-tests';
 import { reportCommand } from '../commands/report';
-import { runCommand } from '../commands/run';
+import { pipelineCommand } from '../commands/pipeline';
 
 const program = new Command();
 
@@ -29,7 +29,7 @@ program
   .option('--pages <routes>', '手动指定页面路由 (逗号分隔)')
   .action(async (options) => {
     try {
-      await runCommand({
+      await pipelineCommand({
         project: options.project,
         base: options.base,
         target: options.target,
@@ -104,7 +104,7 @@ program
   .option('-o, --output <dir>', '输出目录', 'test-output')
   .action(async (options) => {
     try {
-      await executeCommand({
+      await execTestsCommand({
         testDir: options.testDir,
         baseUrl: options.baseUrl,
         headed: options.headed,
