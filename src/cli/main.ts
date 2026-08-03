@@ -45,6 +45,7 @@ program
   .option('-o, --output <dir>', '输出目录', 'test-output')
   .option('--pages <routes>', '手动指定页面路由 (逗号分隔)')
   .option('--no-cleanup', '保留远程仓库克隆 (默认 pipeline 结束后自动清理)')
+  .option('--no-clean', '保留上次运行的中间数据 (默认清除 diff/analysis/pages/results)')
   .option('--resume', '跳过 Step 1 (diff 已存在)，从 Step 2 续跑')
   .action(async (options) => {
     try {
@@ -63,6 +64,7 @@ program
         output: options.output,
         pages: options.pages ? options.pages.split(',').map((s: string) => s.trim()) : undefined,
         cleanup: options.cleanup,
+        clean: options.clean,
         resume: options.resume,
       });
     } catch (err) {

@@ -16,17 +16,33 @@ export interface PipelineOptions {
   cleanup?: boolean;
   /** Skip Step 1 (diff already extracted), start from Step 2 */
   resume?: boolean;
+  /** Clear intermediate data from previous runs (default: true, ignored with --resume) */
+  clean?: boolean;
+}
+
+// Directories cleared between runs (intermediate data only — tests/ and reports/ are never cleared)
+const INTERMEDIATE_DIRS = ['diff', 'analysis', 'pages', 'results'];
+
+function clearIntermediateDirs(outputRoot: string): void {
+  for (const dir of INTERMEDIATE_DIRS) {
+    const full = path.join(outputRoot, dir);
+    if (fs.existsSync(full)) {
+      fs.rmSync(full, { recursive: true, force: true });
+    }
+  }
 }
 
 /**
- * Full pipeline: diff → (AI analysis → browse → AI test gen) → execute → report
- *
- * Step 2 (AI analysis) and Step 4 (AI test generation) are Claude Code skills:
- *   /e2e-analyze   — reads diff/, writes analysis/impact.json
- *   /e2e-generate  — reads analysis + pages/, writes tests/*.spec.ts
+ * Full pipeline:
+ *   1. diff        (deterministic, CLI)
+ *   2. AI analysis (Claude Code skill: /e2e-analyze)
+ *   3. browse      (deterministic, CLI)
+ *   4. AI generate (Claude Code)
+ *   5. execute     (deterministic, CLI)
+ *   6. report      (deterministic, CLI)
  */
 export async function pipelineCommand(options: PipelineOptions): Promise<void> {
-  const { projects, baseUrl, cleanup = true, resume = false } = options;
+  const { projects, baseUrl, cleanup = true, resume = false, clean = true } = options;
   const outputRoot = options.output || path.join(process.cwd(), 'test-output');
   const diffDir = path.join(outputRoot, 'diff');
   const analysisDir = path.join(outputRoot, 'analysis');
@@ -41,6 +57,11 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
   console.log('╔══════════════════════════════════════╗');
   console.log('║   E2E Change-Impact Test Pipeline   ║');
   console.log('╚══════════════════════════════════════╝\n');
+
+  // Clear intermediate data from previous runs
+  if (!resume && clean) {
+    clearIntermediateDirs(outputRoot);
+  }
 
   if (hasRemote) {
     console.log(`Remote repo(s) detected — will clone to ${path.resolve(cacheDir)}/`);
@@ -146,5 +167,5 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
   }
 
   console.log(`\n✅ Pipeline complete!`);
-  console.log(`   Report: ${path.join(outputRoot, 'reports', 'change-report.md')}`);
+  console.log(`   Reports: ${path.join(outputRoot, 'reports')}/`);
 }

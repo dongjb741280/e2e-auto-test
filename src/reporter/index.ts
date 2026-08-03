@@ -133,15 +133,23 @@ function renderChangeType(type: string): string {
   }
 }
 
+function timestamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
 export function writeReport(report: ChangeReport, outputDir: string): string {
+  const ts = timestamp();
   const markdown = generateMarkdownReport(report);
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const mdPath = path.join(outputDir, 'change-report.md');
+  // Timestamped filenames for history
+  const mdPath = path.join(outputDir, `change-report-${ts}.md`);
   fs.writeFileSync(mdPath, markdown);
 
   // Also save structured JSON
-  const jsonPath = path.join(outputDir, 'change-report.json');
+  const jsonPath = path.join(outputDir, `change-report-${ts}.json`);
   fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 
   return mdPath;
