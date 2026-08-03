@@ -160,5 +160,5 @@ export function extractDiff(
     JSON.stringify(commits, null, 2)
   );
 
-  return { baseRef, targetRef, files, rawDiff, commits, stats };
+  return { projectPath, baseRef, targetRef, files, rawDiff, commits, stats };
 }

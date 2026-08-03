@@ -14,11 +14,18 @@ Git Diff → AI 影响分析 → AI 用例生成 → Playwright 执行 → 变�
 npm install
 npm run build
 
-# 运行完整流程
+# 单项目
 npx e2e-test run \
   --project /path/to/your-project \
   --base v1.0.0 \
   --target v1.1.0 \
+  --base-url http://localhost:3000
+
+# 前后端分离项目（逗号分隔，按索引一一对应）
+npx e2e-test run \
+  --project /path/to/frontend,/path/to/backend \
+  --base v1.0.0,v2.0.0 \
+  --target v1.1.0,v2.1.0 \
   --base-url http://localhost:3000
 ```
 
@@ -47,7 +54,7 @@ npx e2e-test diff \
   [-o, --output <dir>]
 ```
 
-输出：`test-output/diff/` (`files.json` + `raw.diff` + `commits.json`)
+输出：`test-output/diff/`（单项目: `files.json/raw.diff/commits.json`；多项目: `<project-name>/` 子目录 + `projects.json/summary.json`）
 
 ### `browse` — 浏览页面提取 DOM
 

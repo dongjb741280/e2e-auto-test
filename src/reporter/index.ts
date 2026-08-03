@@ -9,7 +9,7 @@ export function generateMarkdownReport(report: ChangeReport): string {
     `# 变更影响测试报告`,
     ``,
     `> 生成时间: ${meta.generatedAt}`,
-    `> 项目: ${meta.project}`,
+    `> 项目: ${meta.projects.join(', ')}`,
     `> 基线版本: \`${meta.baseRef}\` → 目标版本: \`${meta.targetRef}\``,
     `> 测试地址: ${meta.baseUrl}`,
     ``,

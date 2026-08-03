@@ -1,14 +1,13 @@
 import path from 'path';
+import fs from 'fs';
 import { diffCommand } from './diff';
 import { browseCommand } from './browse';
 import { execTestsCommand } from './exec-tests';
 import { reportCommand } from './report';
-import type { ImpactAnalysis } from '../types';
+import type { ProjectSpec, ImpactAnalysis } from '../types';
 
-export interface RunCommandOptions {
-  project: string;
-  base: string;
-  target: string;
+export interface PipelineOptions {
+  projects: ProjectSpec[];
   baseUrl: string;
   headed?: boolean;
   output?: string;
@@ -17,12 +16,9 @@ export interface RunCommandOptions {
 
 /**
  * Full pipeline: diff → (AI analysis → browse → AI test gen) → execute → report
- *
- * Steps 2 and 4 (AI analysis & test generation) are handled by Claude Code,
- * which reads the intermediate files and writes structured JSON.
- * This command handles the deterministic engineering steps (1, 3, 5, 6).
  */
-export async function pipelineCommand(options: RunCommandOptions): Promise<void> {
+export async function pipelineCommand(options: PipelineOptions): Promise<void> {
+  const { projects, baseUrl } = options;
   const outputRoot = options.output || path.join(process.cwd(), 'test-output');
   const diffDir = path.join(outputRoot, 'diff');
   const analysisDir = path.join(outputRoot, 'analysis');
@@ -34,29 +30,37 @@ export async function pipelineCommand(options: RunCommandOptions): Promise<void>
   console.log('║   E2E Change-Impact Test Pipeline   ║');
   console.log('╚══════════════════════════════════════╝\n');
 
-  // ---- Step 1: Extract Git Diff ----
+  if (projects.length > 1) {
+    console.log(`Multi-project mode: ${projects.length} projects`);
+    for (const p of projects) {
+      console.log(`  ${path.basename(p.path)}: ${p.baseRef} → ${p.targetRef}`);
+    }
+    console.log('');
+  }
+
+  // ---- Step 1: Extract Git Diff (all projects) ----
   console.log('━━━ Step 1/6: Extracting Git Diff ━━━');
-  await diffCommand({
-    project: options.project,
-    base: options.base,
-    target: options.target,
+  const multiDiff = await diffCommand({
+    projects,
     output: diffDir,
   });
 
+  // ---- Step 2: AI Impact Analysis ----
   console.log(`\n📋 Step 2/6: AI Impact Analysis`);
   console.log('   This step requires Claude Code to analyze the diff.');
-  console.log(`   Diff data is at: ${diffDir}`);
+  console.log(`   Diff data is at: ${diffDir}/`);
+
+  if (projects.length > 1) {
+    console.log(`   Each project has its own subdirectory under ${diffDir}/`);
+    console.log(`   Aggregated summary: ${diffDir}/summary.json`);
+    console.log(`   Cross-project analysis: consider both frontend AND backend changes together.`);
+  }
+
   console.log(`   Please ask Claude Code to read the diff files and`);
   console.log(`   generate an impact analysis JSON at: ${analysisDir}/impact.json`);
-  console.log(`   (Or run 'e2e-test analyze' to do this interactively)`);
-
-  // Pause: Claude Code needs to do the analysis
-  console.log(`\n   ⏸️  Waiting for AI analysis... (press Enter to continue after analysis is done)`);
 
   // ---- Step 3: Browse Affected Pages ----
   const impactPath = path.join(analysisDir, 'impact.json');
-  const fs = await import('fs');
-
   let pagesToBrowse = options.pages || [];
   if (pagesToBrowse.length === 0 && fs.existsSync(impactPath)) {
     const analysis: ImpactAnalysis = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
@@ -66,7 +70,7 @@ export async function pipelineCommand(options: RunCommandOptions): Promise<void>
   if (pagesToBrowse.length > 0) {
     console.log(`\n━━━ Step 3/6: Browsing Affected Pages ━━━`);
     await browseCommand({
-      baseUrl: options.baseUrl,
+      baseUrl,
       pages: pagesToBrowse,
       output: pagesDir,
       headed: options.headed,
@@ -77,18 +81,19 @@ export async function pipelineCommand(options: RunCommandOptions): Promise<void>
 
   // ---- Step 4: AI Test Generation ----
   console.log(`\n📋 Step 4/6: AI Test Generation`);
-  console.log('   This step requires Claude Code to generate Playwright tests.');
   console.log(`   Page data is at: ${pagesDir}`);
   console.log(`   Analysis is at: ${analysisDir}/impact.json`);
-  console.log(`   Please ask Claude Code to generate tests at: ${testsDir}/`);
-  console.log(`   (Or run 'e2e-test generate' to do this interactively)`);
+  console.log(`   Generate tests at: ${testsDir}/`);
+  if (projects.length > 1) {
+    console.log(`   Consider cross-project impacts: backend API changes may affect frontend behavior.`);
+  }
 
   // ---- Step 5: Execute Tests ----
   if (fs.existsSync(testsDir)) {
     console.log(`\n━━━ Step 5/6: Executing Tests ━━━`);
     await execTestsCommand({
       testDir: testsDir,
-      baseUrl: options.baseUrl,
+      baseUrl,
       headed: options.headed,
       output: outputRoot,
     });
@@ -102,10 +107,10 @@ export async function pipelineCommand(options: RunCommandOptions): Promise<void>
     results: path.join(resultsDir, 'results.json'),
     analysis: impactPath,
     output: path.join(outputRoot, 'reports'),
-    project: options.project,
-    baseRef: options.base,
-    targetRef: options.target,
-    baseUrl: options.baseUrl,
+    project: projects.length === 1 ? projects[0].path : projects.map(p => p.path).join(','),
+    baseRef: projects.length === 1 ? projects[0].baseRef : projects.map(p => `${path.basename(p.path)}@${p.baseRef}`).join(', '),
+    targetRef: projects.length === 1 ? projects[0].targetRef : projects.map(p => `${path.basename(p.path)}@${p.targetRef}`).join(', '),
+    baseUrl,
   });
 
   console.log(`\n✅ Pipeline complete!`);

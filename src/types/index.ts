@@ -25,11 +25,25 @@ export interface CommitInfo {
 }
 
 export interface DiffOutput {
+  projectPath: string;
   baseRef: string;
   targetRef: string;
   files: FileChange[];
   rawDiff: string;
   commits: CommitInfo[];
+  stats: DiffStats;
+}
+
+/** One project + its version pair */
+export interface ProjectSpec {
+  path: string;
+  baseRef: string;
+  targetRef: string;
+}
+
+/** Aggregated diff across all projects */
+export interface MultiDiffOutput {
+  projects: DiffOutput[];
   stats: DiffStats;
 }
 
@@ -117,8 +131,8 @@ export interface ExecutionResult {
 
 export interface ChangeReport {
   meta: {
-    project: string;
-    baseRef: string;
+    projects: string[];         // project paths
+    baseRef: string;            // 多项目统一基线，或逗号分隔
     targetRef: string;
     baseUrl: string;
     generatedAt: string;

@@ -39,11 +39,14 @@ export function reportCommand(options: ReportCommandOptions): string {
     }
   }
 
-  // Load diff stats
+  // Load diff stats (supports multi-project summary.json)
   let diff: DiffStats = { additions: 0, deletions: 0, filesChanged: 0 };
-  const diffPath = path.join(process.cwd(), 'test-output', 'diff', 'files.json');
-  if (fs.existsSync(diffPath)) {
-    const files = JSON.parse(fs.readFileSync(diffPath, 'utf-8'));
+  const summaryPath = path.join(process.cwd(), 'test-output', 'diff', 'summary.json');
+  const filesJsonPath = path.join(process.cwd(), 'test-output', 'diff', 'files.json');
+  if (fs.existsSync(summaryPath)) {
+    diff = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
+  } else if (fs.existsSync(filesJsonPath)) {
+    const files = JSON.parse(fs.readFileSync(filesJsonPath, 'utf-8'));
     diff = {
       additions: files.reduce((s: number, f: { additions: number }) => s + f.additions, 0),
       deletions: files.reduce((s: number, f: { deletions: number }) => s + f.deletions, 0),
@@ -53,7 +56,7 @@ export function reportCommand(options: ReportCommandOptions): string {
 
   const report: ChangeReport = {
     meta: {
-      project: options.project || 'unknown',
+      projects: options.project ? options.project.split(',') : ['unknown'],
       baseRef: options.baseRef || 'unknown',
       targetRef: options.targetRef || 'unknown',
       baseUrl: options.baseUrl || 'unknown',

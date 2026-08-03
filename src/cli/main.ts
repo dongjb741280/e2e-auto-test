@@ -6,6 +6,23 @@ import { browseCommand } from '../commands/browse';
 import { execTestsCommand } from '../commands/exec-tests';
 import { reportCommand } from '../commands/report';
 import { pipelineCommand } from '../commands/pipeline';
+import type { ProjectSpec } from '../types';
+
+function parseProjects(projectRaw: string, baseRaw: string, targetRaw: string): ProjectSpec[] {
+  const paths = projectRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const bases = baseRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const targets = targetRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+  if (paths.length === 0) throw new Error('At least one --project is required');
+  if (paths.length !== bases.length) {
+    throw new Error(`--project count (${paths.length}) does not match --base count (${bases.length})`);
+  }
+  if (paths.length !== targets.length) {
+    throw new Error(`--project count (${paths.length}) does not match --target count (${targets.length})`);
+  }
+
+  return paths.map((p, i) => ({ path: p, baseRef: bases[i], targetRef: targets[i] }));
+}
 
 const program = new Command();
 
@@ -19,20 +36,19 @@ program
 // ============================================================
 program
   .command('run')
-  .description('运行完整变更影响测试流程 (diff → 分析 → 浏览 → 生成 → 执行 → 报告)')
-  .requiredOption('-p, --project <path>', '被测项目路径 (git repo)')
-  .requiredOption('-b, --base <ref>', '基线版本 (commit/branch/tag)')
-  .requiredOption('-t, --target <ref>', '目标版本 (commit/branch/tag)')
+  .description('运行完整变更影响测试流程 (支持多项目，逗号分隔)')
+  .requiredOption('-p, --project <paths>', '被测项目路径 (多项目逗号分隔，如 frontend,backend)')
+  .requiredOption('-b, --base <refs>', '基线版本 (与 --project 一一对应，逗号分隔)')
+  .requiredOption('-t, --target <refs>', '目标版本 (与 --project 一一对应，逗号分隔)')
   .requiredOption('-u, --base-url <url>', '被测应用 URL')
   .option('--headed', '有头模式运行浏览器')
   .option('-o, --output <dir>', '输出目录', 'test-output')
   .option('--pages <routes>', '手动指定页面路由 (逗号分隔)')
   .action(async (options) => {
     try {
+      const projects = parseProjects(options.project, options.base, options.target);
       await pipelineCommand({
-        project: options.project,
-        base: options.base,
-        target: options.target,
+        projects,
         baseUrl: options.baseUrl,
         headed: options.headed,
         output: options.output,
@@ -49,19 +65,15 @@ program
 // ============================================================
 program
   .command('diff')
-  .description('提取两个版本间的 Git Diff')
-  .requiredOption('-p, --project <path>', '被测项目路径 (git repo)')
-  .requiredOption('-b, --base <ref>', '基线版本 (commit/branch/tag)')
-  .requiredOption('-t, --target <ref>', '目标版本 (commit/branch/tag)')
+  .description('提取 Git Diff (支持多项目)')
+  .requiredOption('-p, --project <paths>', '被测项目路径 (多项目逗号分隔)')
+  .requiredOption('-b, --base <refs>', '基线版本 (逗号分隔)')
+  .requiredOption('-t, --target <refs>', '目标版本 (逗号分隔)')
   .option('-o, --output <dir>', '输出目录', 'test-output/diff')
   .action(async (options) => {
     try {
-      await diffCommand({
-        project: options.project,
-        base: options.base,
-        target: options.target,
-        output: options.output,
-      });
+      const projects = parseProjects(options.project, options.base, options.target);
+      await diffCommand({ projects, output: options.output });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
@@ -167,66 +179,52 @@ program
       process.exit(1);
     }
 
-    // Read the diff data
-    const filesJson = fs.readFileSync(path.join(diffDir, 'files.json'), 'utf-8');
-    const commitsJson = fs.readFileSync(path.join(diffDir, 'commits.json'), 'utf-8');
-    const rawDiff = fs.readFileSync(path.join(diffDir, 'raw.diff'), 'utf-8');
+    // Check if multi-project (projects.json exists)
+    const projectsPath = path.join(diffDir, 'projects.json');
+    if (fs.existsSync(projectsPath)) {
+      // Multi-project mode
+      const projects = JSON.parse(fs.readFileSync(projectsPath, 'utf-8'));
+      console.log(`Multi-project analysis: ${projects.length} projects\n`);
 
-    const files = JSON.parse(filesJson);
-    const commits = JSON.parse(commitsJson);
-
-    // Create the analysis prompt for Claude Code
-    const prompt = `
-You are analyzing a git diff to identify affected frontend features and pages.
-
-## Changed Files (${files.length} files)
-${files.map((f: any) => `- [${f.status}] ${f.path} (+${f.additions}/-${f.deletions})`).join('\n')}
-
-## Commits (${commits.length} commits)
-${commits.map((c: any) => `- ${c.hash}: ${c.message} (${c.author})`).join('\n')}
-
-## Raw Diff (first 10000 chars)
-${rawDiff.slice(0, 10000)}
-
-## Task
-Analyze the changes above and identify:
-1. Which frontend pages/routes are affected
-2. What is the nature of each change (new feature, bug fix, UI modification, etc.)
-3. What test scenarios should be written for each affected page
-
-## Output Format
-Write a JSON file to \`${outputDir}/impact.json\` with this structure:
-\`\`\`json
-{
-  "summary": "One-sentence summary of the overall change",
-  "affectedPages": [
-    {
-      "route": "/login",
-      "name": "用户登录页",
-      "changeType": "modified",
-      "changeDescription": "Added form validation for email field",
-      "impactedFiles": ["src/pages/Login.tsx", "src/utils/validate.ts"],
-      "testScenarios": [
-        {
-          "name": "Empty email field should show validation error",
-          "priority": "P0",
-          "steps": ["Navigate to /login", "Leave email field empty", "Click submit"],
-          "expectedResult": "Displays 'Email is required' error message"
+      for (const proj of projects) {
+        console.log(`### Project: ${path.basename(proj.projectPath)} (${proj.baseRef} → ${proj.targetRef})`);
+        console.log(`Files: ${proj.stats.filesChanged} (+${proj.stats.additions}/-${proj.stats.deletions})`);
+        if (proj.files.length > 0) {
+          for (const f of proj.files.slice(0, 50)) {
+            console.log(`  [${f.status}] ${f.path}`);
+          }
+          if (proj.files.length > 50) console.log(`  ... and ${proj.files.length - 50} more`);
         }
-      ]
+        console.log('');
+      }
+    } else {
+      // Single project mode (backward compatible)
+      const filesJson = fs.readFileSync(path.join(diffDir, 'files.json'), 'utf-8');
+      const commitsJson = fs.readFileSync(path.join(diffDir, 'commits.json'), 'utf-8');
+      const rawDiff = fs.readFileSync(path.join(diffDir, 'raw.diff'), 'utf-8');
+      const files = JSON.parse(filesJson);
+      const commits = JSON.parse(commitsJson);
+
+      console.log(`## Changed Files (${files.length} files)`);
+      console.log(files.map((f: any) => `- [${f.status}] ${f.path} (+${f.additions}/-${f.deletions})`).join('\n'));
+      console.log(`\n## Commits (${commits.length} commits)`);
+      console.log(commits.map((c: any) => `- ${c.hash}: ${c.message} (${c.author})`).join('\n'));
+      console.log(`\n## Raw Diff (first 10000 chars)`);
+      console.log(rawDiff.slice(0, 10000));
     }
-  ],
-  "riskLevel": "low|medium|high",
-  "recommendation": "Suggested actions before deployment"
-}
-\`\`\`
 
-Focus on USER-FACING frontend features only. Ignore backend-only, config, or test file changes.
-`;
+    if (projectsPath && fs.existsSync(projectsPath)) {
+      console.log(`\n## Task (Cross-Project Impact Analysis)`);
+      console.log(`Analyze changes across ALL projects. Key considerations:`);
+      console.log(`1. Backend API changes → which frontend pages call these APIs?`);
+      console.log(`2. Frontend component changes → which backend endpoints are affected?`);
+      console.log(`3. Identify cross-project dependencies and breaking changes.`);
+    } else {
+      console.log(`\n## Task`);
+      console.log(`Analyze the changes above and identify affected frontend features.`);
+    }
 
-    console.log(prompt);
-    console.log(`\n---`);
-    console.log(`Save analysis to: ${outputDir}/impact.json`);
+    console.log(`\nWrite impact analysis to: ${outputDir}/impact.json`);
   });
 
 program.parse();
