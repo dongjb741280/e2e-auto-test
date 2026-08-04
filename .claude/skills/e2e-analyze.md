@@ -45,23 +45,90 @@ Follow these four stages:
 
 ### Stage 1: File Classification
 
-Classify every changed file by path prefix:
+Classify every changed file using a **multi-dimensional** approach — path alone is unreliable because each project has its own naming conventions.
 
-| Path prefix | Category | Action |
-|-------------|----------|--------|
-| `frontend/src/views/` | Frontend page | Core analysis |
-| `frontend/src/layout/` | Frontend layout | Core analysis |
-| `frontend/src/components/` | Frontend component | Core analysis |
-| `frontend/src/api/` | Frontend API layer | Core analysis |
-| `frontend/src/utils/` | Frontend utility | Core analysis |
-| `frontend/src/router/` | Frontend routing | Core analysis |
-| `frontend/public/` | Static assets | Note if new |
-| `src/main/java/.../controller/` | Backend API | Cross-reference |
-| `src/main/java/.../service/` | Backend logic | Cross-reference |
-| `*.xml`, `*.properties`, `*.yaml` | Config | Skip unless security |
-| `*.md`, `.gitignore`, CI files | Docs/config | Skip |
-| `tests/`, `*.test.*`, `*.spec.*` | Tests | Skip |
-| Agent skills, scripts, schemas | Tools | Skip |
+#### Step 1.1: Detect project type and structure
+
+Read the project's build/config files to understand its technology stack and directory layout:
+
+```
+package.json    → Node.js project. Check "dependencies" for vue/react/next/nuxt → SPA frontend or fullstack
+pom.xml         → Java/Maven. Check artifactId, parent POM, module names → backend service
+build.gradle    → Java/Kotlin/Gradle
+go.mod          → Go project
+requirements.txt / setup.py → Python project
+Cargo.toml      → Rust project
+```
+
+From these, infer the project's role:
+
+| Signal | Inference |
+|--------|-----------|
+| `package.json` has `vue`/`react`/`@angular/core` + no server deps | Frontend SPA |
+| `package.json` has `next`/`nuxt`/`express`/`fastify` + `react`/`vue` | Fullstack JS |
+| `pom.xml` + `*-api`/`*-service` module names | Java microservice |
+| `package.json` has only `express`/`koa`/`fastify` (no react/vue) | Backend API (Node) |
+| Multiple top-level dirs with their own build files | Monorepo |
+
+#### Step 1.2: Classify each file by extension + content
+
+Use **file extension** as the primary signal, then verify with **file content**:
+
+**Layer: Frontend — UI (core analysis)**
+
+| Extension | Content signals |
+|-----------|----------------|
+| `.vue` | `<template>` + `<script>` → Vue SFC, core UI change |
+| `.jsx`, `.tsx` | `import React`/`from 'react'` → React component. If exports JSX → UI. If only hooks/utils → Frontend logic |
+| `.html` | `<div>`, `<form>`, `<button>` → template/page |
+| `.css`, `.scss`, `.less` | Style rules → visual change, note but don't deep-analyze |
+
+**Layer: Frontend — Logic (core analysis)**
+
+| Extension | Content signals |
+|-----------|----------------|
+| `.js`, `.ts` (inside frontend module) | `import axios`/`fetch(` → API client. `export function`/`export const` → utility. `createRouter` → routing. `createStore`/`createPinia` → state management. `import { ref }`/`import { useState }` → composable/hook |
+
+**Layer: Backend — API (cross-reference)**
+
+| Extension | Content signals |
+|-----------|----------------|
+| `.java` | `@RestController`/`@Controller` → API endpoint. `@Service`/`@Component` → business logic. `@Repository`/`@Entity` → data layer. `interface` → contract/API surface |
+| `.go` | `func (s *Server) handle`/`http.HandleFunc` → HTTP handler. `func (s *Service)` → business logic |
+| `.py` | `@app.route`/`@router.get` → API endpoint. `def test_` → test |
+| `.kt` | `@RestController`/`fun` in controller package → API |
+
+**Layer: Config/Infra (skip unless changed)**
+
+| Extension | Content signals | Action |
+|-----------|----------------|--------|
+| `.xml`, `.yaml`, `.yml`, `.properties`, `.env` | DB connection strings, ports → infrastructure. Security rules → flag. Feature flags → note |
+| `Dockerfile`, `docker-compose*.yml` | Container config → skip |
+| `.json` (config) | `package.json`, `tsconfig.json` → skip. `.eslintrc` → skip |
+
+**Layer: Docs/Tools/Assets (skip)**
+
+| Signal | Action |
+|--------|--------|
+| `.md`, `.txt`, `LICENSE` | Skip |
+| `.png`, `.svg`, `.ico`, `.jpg` | Note new asset, skip deep analysis |
+| Path contains `test/`/`tests/`/`__tests__`/`spec/` | Skip |
+| `.agents/`, `.claude/`, `.github/`, CI configs | Skip |
+| `.xsd`, grammar files, schema definitions | Skip |
+| Lock files (`package-lock.json`, `yarn.lock`, `go.sum`) | Skip |
+
+#### Step 1.3: Associate backend API changes with frontend pages
+
+When backend API files change, search the frontend code for API calls to the same endpoint paths:
+
+```
+Backend: @PostMapping("/api/user/login")  in UserController.java
+  → Search frontend .js/.ts/.vue files for: "/api/user/login" or "user/login"
+  → Found in frontend/src/api/auth.js: post('/user/login', ...)
+  → This API is consumed by: Login.vue
+```
+
+This gives you cross-project impact when both frontend and backend diffs are provided.
 
 ### Stage 2: Code Change Understanding
 
