@@ -130,10 +130,12 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
     console.log(`\n⏭️  Step 4/6: Tests already exist (${testFiles.length} files)`);
   } else {
     console.log(`\n━━━ Step 4/6: AI Test Generation ━━━`);
+    console.log(`   Skill: /e2e-generate`);
     console.log(`   Input:  ${analysisDir}/impact.json + ${pagesDir}/`);
     console.log(`   Output: ${testsDir}/*.spec.ts`);
     console.log(`\n   Claude Code reads the analysis and page DOM snapshots,`);
-    console.log(`   then generates Playwright test files with real selectors.`);
+    console.log(`   matches scenarios to real selectors,`);
+    console.log(`   and generates self-contained Playwright test files.`);
     console.log(`\n   Run /e2e-generate to create tests, then re-run with --resume.`);
     console.log(`\n⏸️  Pipeline paused — waiting for test files`);
     return;
