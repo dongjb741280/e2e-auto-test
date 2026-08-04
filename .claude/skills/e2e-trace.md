@@ -2,11 +2,107 @@
 
 Given a single modified file, trace the dependency chain to find all frontend pages that are affected. Start from the file, follow imports and invocations outward, stop at pages.
 
+**Prefer CodeGraph** when `.codegraph/codegraph.db` exists — it provides AST-level precise relationships. Fall back to grep only when CodeGraph is unavailable.
+
 ## Input
 
 - **Changed file path** (relative to project root), e.g. `src/main/java/com/example/service/OrderService.java`
 - **Project root** (default: cwd)
 - **Max depth** (default: 5, prevents infinite loops)
+- **CodeGraph DB path** (auto-detected: `<project>/.codegraph/codegraph.db`)
+
+## CodeGraph-First Tracing
+
+When `.codegraph/codegraph.db` exists, use SQL queries for all dependency lookups. The database schema provides precise AST-level edges.
+
+### Step 1: Identify symbols in the changed file
+
+```sql
+SELECT id, kind, name, qualified_name, signature, start_line
+FROM nodes
+WHERE file_path = '<changed-file-path>'
+  AND kind NOT IN ('file', 'import')
+ORDER BY start_line;
+```
+
+### Step 2: Find direct dependents (files that import/call/reference this file's symbols)
+
+```sql
+-- Files that import/call/reference ANY symbol in the changed file
+SELECT DISTINCT
+    n2.file_path AS dependent_file,
+    e.kind AS relationship,
+    n2.kind AS target_kind,
+    n2.name AS target_name
+FROM edges e
+JOIN nodes n1 ON e.target = n1.id       -- n1 = symbol in the changed file
+JOIN nodes n2 ON e.source = n2.id       -- n2 = symbol that depends on it
+WHERE n1.file_path = '<changed-file-path>'
+  AND e.kind IN ('imports', 'calls', 'references', 'instantiates', 'extends', 'implements')
+  AND n2.file_path != '<changed-file-path>'
+  AND n2.file_path NOT LIKE '.agents/%'
+ORDER BY n2.file_path;
+```
+
+### Step 3: Classify dependent file role
+
+```sql
+-- Check file language and node kinds within it
+SELECT DISTINCT f.language, n.kind
+FROM files f
+JOIN nodes n ON n.file_path = f.path
+WHERE f.path = '<dependent-file>';
+```
+
+Classification from query results:
+
+| Language | Contains node kind | Role | Terminal? |
+|----------|-------------------|------|-----------|
+| vue | `component` | Frontend page/component | If in `views/` or `pages/` dir → terminal |
+| vue | `component` in `components/` | Reusable component | Recurse |
+| java | `route` (has `@RequestMapping`) | Backend controller | Recurse to find frontend API consumers |
+| java | `class`/`interface` (no route) | Backend service/repo | Recurse to controllers |
+| javascript/typescript | `function`/`class` in `api/` | Frontend API client | Recurse |
+| javascript/typescript | `function` in `utils/` | Utility | Usually stop |
+| javascript/typescript | `class` in `stores/` | State management | Recurse |
+
+### Step 4: Recurse
+
+For each non-terminal dependent, repeat Step 1-3 with the dependent's file path. Maintain a `visited` set. Stop at terminals or max depth.
+
+### Full trace SQL (for common patterns)
+
+**Backend → API consumers** (find frontend files calling a specific API path):
+
+```sql
+-- Given a route path like '/api/order', find frontend files referencing it
+SELECT DISTINCT n.file_path
+FROM nodes n
+WHERE n.file_path LIKE 'frontend/%'
+  AND n.file_path NOT LIKE '%/node_modules/%'
+  AND (
+    n.name LIKE '%/api/order%'
+    OR n.qualified_name LIKE '%/api/order%'
+    OR n.signature LIKE '%/api/order%'
+  );
+```
+
+**Component → Pages** (find pages that import a given component):
+
+```sql
+-- Given a component file, find pages that import it
+SELECT DISTINCT n2.file_path
+FROM edges e
+JOIN nodes n1 ON e.target = n1.id
+JOIN nodes n2 ON e.source = n2.id
+WHERE n1.file_path = '<component-file>'
+  AND e.kind = 'imports'
+  AND n2.file_path LIKE 'frontend/src/views/%';
+```
+
+## Grep-Based Tracing (fallback)
+
+Use only when no CodeGraph database exists.
 
 ## Output
 
