@@ -5,6 +5,7 @@ import { diffCommand } from '../commands/diff';
 import { browseCommand } from '../commands/browse';
 import { execTestsCommand } from '../commands/exec-tests';
 import { reportCommand } from '../commands/report';
+import { traceCommand } from '../commands/trace';
 import { pipelineCommand } from '../commands/pipeline';
 import type { ProjectSpec } from '../types';
 
@@ -164,6 +165,32 @@ program
         baseRef: options.baseRef,
         targetRef: options.targetRef,
         baseUrl: options.baseUrl,
+      });
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// ============================================================
+// trace — CodeGraph-powered impact tracing
+// ============================================================
+program
+  .command('trace')
+  .description('通过 CodeGraph 知识库追溯文件到前端页面的调用链')
+  .requiredOption('-p, --project <path>', '被测项目路径')
+  .option('--files <paths>', '要追溯的文件 (逗号分隔)')
+  .option('--from-diff <dir>', '从 diff 目录读取变更文件列表')
+  .option('--depth <n>', '追溯深度', '3')
+  .option('-o, --output <dir>', '输出目录', 'test-output/trace')
+  .action(async (options) => {
+    try {
+      await traceCommand({
+        project: options.project,
+        files: options.files ? options.files.split(',').map((s: string) => s.trim()) : undefined,
+        fromDiff: options.fromDiff,
+        depth: parseInt(options.depth, 10),
+        output: options.output,
       });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);

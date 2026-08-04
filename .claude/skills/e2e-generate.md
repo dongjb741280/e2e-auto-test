@@ -6,6 +6,7 @@ Generate Playwright test code from impact analysis and page DOM snapshots. Each 
 
 Read from `test-output/`:
 - `analysis/impact.json` — affected pages with test scenarios
+- `trace/trace.json` — CodeGraph dependency chains (if available, prioritize these pages)
 - `pages/pages.json` — DOM snapshots with interactive elements and selectors
 - `pages/*.html` — full DOM for selector verification
 - `pages/*.png` — screenshots for visual reference

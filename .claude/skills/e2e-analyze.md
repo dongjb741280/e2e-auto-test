@@ -10,6 +10,11 @@ Read from `test-output/diff/`:
 - `commits.json`
 - `summary.json`
 
+Also check `test-output/trace/trace.json` — if it exists, CodeGraph has pre-traced the dependency chains from changed files to frontend pages. Use these chains to validate and enrich your analysis. Each chain provides:
+- `sourceFile` — the changed file
+- `hops[]` — each hop with `{ file, relation, symbol }`
+- `affectedPages[]` — terminal frontend pages
+
 ## Output
 
 Write to `test-output/analysis/impact.json` with this structure:

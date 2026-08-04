@@ -5,6 +5,7 @@ import { browseCommand } from './browse';
 import { execTestsCommand } from './exec-tests';
 import { reportCommand } from './report';
 import { isRemoteUrl, clearCloneCache } from '../git/diff';
+import { hasCodeGraph, traceImpact } from '../codegraph/tracer';
 import type { ProjectSpec, ImpactAnalysis } from '../types';
 
 export interface PipelineOptions {
@@ -88,6 +89,42 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
     console.log(`   Using existing diff: ${diffDir}/`);
   }
 
+  // ---- Step 1.5: CodeGraph Impact Trace ----
+  const traceDir = path.join(outputRoot, 'trace');
+  if (!resume) {
+    const filesJson = path.join(diffDir, 'files.json');
+    if (fs.existsSync(filesJson) || fs.existsSync(path.join(diffDir, 'projects.json'))) {
+      // Collect changed files from diff output
+      const changedFiles: string[] = [];
+      if (fs.existsSync(path.join(diffDir, 'projects.json'))) {
+        const projects = JSON.parse(fs.readFileSync(path.join(diffDir, 'projects.json'), 'utf-8'));
+        for (const p of projects) {
+          for (const f of p.files || []) changedFiles.push(f.path);
+        }
+      } else if (fs.existsSync(filesJson)) {
+        for (const f of JSON.parse(fs.readFileSync(filesJson, 'utf-8'))) changedFiles.push(f.path || f);
+      }
+
+      // Check if any project has CodeGraph
+      const cgProjects = projects.filter(p => hasCodeGraph(p.path));
+      if (cgProjects.length > 0) {
+        console.log(`\n━━━ Step 1.5/6: CodeGraph Impact Trace ━━━`);
+        for (const p of cgProjects) {
+          const projFiles = changedFiles.filter((f: string) => f && !f.startsWith('.') && /\.(java|vue|tsx?|jsx?|py|go|kt)$/.test(f));
+          console.log(`   Tracing ${projFiles.length} files in ${path.basename(p.path)}...`);
+          const result = traceImpact(p.path, projFiles, 3);
+          const chainsWithPages = result.chains.filter(c => c.affectedPages.length > 0);
+          console.log(`   → ${chainsWithPages.length} chains reach frontend, ${result.affectedPages.length} pages affected`);
+          // Save trace result
+          fs.mkdirSync(traceDir, { recursive: true });
+          fs.writeFileSync(path.join(traceDir, 'trace.json'), JSON.stringify(result, null, 2));
+        }
+      } else {
+        console.log('\n⏭️  Step 1.5/6: CodeGraph Trace skipped (no CodeGraph index found)');
+      }
+    }
+  }
+
   // ---- Step 2: AI Impact Analysis ----
   if (fs.existsSync(impactPath)) {
     const existing = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
@@ -96,6 +133,9 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
     console.log(`\n━━━ Step 2/6: AI Impact Analysis ━━━`);
     console.log(`   Skill: /e2e-analyze`);
     console.log(`   Input:  ${diffDir}/`);
+    if (fs.existsSync(path.join(traceDir, 'trace.json'))) {
+      console.log(`   Trace:  ${traceDir}/trace.json (CodeGraph chains available)`);
+    }
     console.log(`   Output: ${impactPath}`);
     console.log(`\n   Claude Code reads the diff, applies 4-stage analysis`);
     console.log(`   (file classification → code understanding → feature derivation → test scenarios),`);
