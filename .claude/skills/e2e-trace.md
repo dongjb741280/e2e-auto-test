@@ -1,6 +1,10 @@
 # E2E Impact Trace
 
-Given a single modified file, trace the dependency chain to find all frontend pages that are affected. Start from the file, follow imports and invocations outward, stop at pages.
+Given a single modified file, trace the dependency chain to find all frontend pages that are affected.
+
+**Division of labor**:
+- `src/codegraph/tracer.ts` handles **bulk scanning** in Pipeline Step 1.5 — SQL queries, high-confidence edges, batch processing
+- This skill (`/e2e-trace`) is for **manual deep-dive** — when you need to understand WHY a specific chain exists, validate terminal detection, or trace when CodeGraph is unavailable
 
 **Prefer CodeGraph** when `.codegraph/codegraph.db` exists — it provides AST-level precise relationships. Fall back to grep only when CodeGraph is unavailable.
 

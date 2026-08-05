@@ -114,7 +114,18 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
           console.log(`   Tracing ${projFiles.length} files in ${path.basename(p.path)}...`);
           const result = traceImpact(p.path, projFiles, 3);
           const chainsWithPages = result.chains.filter(c => c.affectedPages.length > 0);
+          const lowConfChains = chainsWithPages.filter(c => c.hops.some(h => h.confidence === 'low'));
+          const highConfPages = [...new Set(
+            chainsWithPages.filter(c => !lowConfChains.includes(c)).flatMap(c => c.affectedPages)
+          )];
           console.log(`   → ${chainsWithPages.length} chains reach frontend, ${result.affectedPages.length} pages affected`);
+          if (lowConfChains.length > 0) {
+            console.log(`   ⚠️  ${lowConfChains.length} chains have low-confidence hops (cross-language bridge)`);
+            console.log(`      → needs Claude Code semantic review in Step 2`);
+          }
+          if (highConfPages.length > 0) {
+            console.log(`   ✅ ${highConfPages.length} pages from high-confidence SQL edges`);
+          }
           // Fold into existing trace (multi-project accumulates)
           fs.mkdirSync(traceDir, { recursive: true });
           const traceFile = path.join(traceDir, 'trace.json');

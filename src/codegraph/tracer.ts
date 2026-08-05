@@ -264,6 +264,7 @@ function traceRecursive(
       file: caller.file,
       relation: caller.relation,
       symbol: caller.viaSymbol,
+      confidence: caller.relation === 'api-consumer' ? 'low' : 'high',
     };
 
     if (isTerminal) {

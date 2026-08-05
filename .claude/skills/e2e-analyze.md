@@ -10,9 +10,17 @@ Read from `test-output/diff/`:
 - `commits.json`
 - `summary.json`
 
-Also check `test-output/trace/trace.json` — if it exists, CodeGraph has pre-traced the dependency chains from changed files to frontend pages. Use these chains to validate and enrich your analysis. Each chain provides:
+Also check `test-output/trace/trace.json` — if it exists, CodeGraph has pre-traced the dependency chains. **Code does bulk, you do quality**:
+
+| Confidence | Source | Your role |
+|-----------|--------|------------|
+| `high` | SQL edges (imports/calls/references) — AST-level precision | **Validate**: confirm the chain is semantically correct. The SQL is rarely wrong, but verify the terminal detection (is it really a page, or just a component?) |
+| `low` | Cross-language bridge (backend route → frontend string match) — may have false positives | **Audit critically**: check each low-confidence hop. Is the API path actually consumed by the claimed frontend file? Are there false matches? |
+
+Each chain in trace.json provides:
 - `sourceFile` — the changed file
-- `hops[]` — each hop with `{ file, relation, symbol }`
+- `symbols[]` — exported symbols (methods, classes, functions)
+- `hops[]` — each hop with `{ file, relation, symbol, confidence, terminal, terminalReason }`
 - `affectedPages[]` — terminal frontend pages
 
 ## Output

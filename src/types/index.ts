@@ -105,6 +105,8 @@ export interface TraceHop {
   symbol: string;
   terminal?: boolean;
   terminalReason?: string;
+  /** 'high' = SQL edge (calls/imports/references), 'low' = cross-language string match */
+  confidence: 'high' | 'low';
 }
 
 export interface SymbolExport {
