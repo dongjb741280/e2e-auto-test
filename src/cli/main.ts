@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 
-import fs from 'fs';
-import path from 'path';
 import { Command } from 'commander';
 import { diffCommand } from '../commands/diff';
 import { browseCommand } from '../commands/browse';
 import { execTestsCommand } from '../commands/exec-tests';
 import { reportCommand } from '../commands/report';
 import { traceCommand } from '../commands/trace';
+import { analyzeCommand } from '../commands/analyze';
 import { pipelineCommand } from '../commands/pipeline';
 import type { ProjectSpec } from '../types';
 
@@ -209,61 +208,10 @@ program
   .option('-d, --diff-dir <dir>', 'Diff 输出目录', 'test-output/diff')
   .option('-o, --output <dir>', '分析结果输出目录', 'test-output/analysis')
   .action((options) => {
-    const diffDir = options.diff;
-    const outputDir = options.output;
-
-    if (!fs.existsSync(diffDir)) {
-      console.error(`Diff directory not found: ${diffDir}`);
-      console.error('Run "e2e-test diff" first.');
-      process.exit(1);
-    }
-
-    // Check if multi-project (projects.json exists)
-    const projectsPath = path.join(diffDir, 'projects.json');
-    if (fs.existsSync(projectsPath)) {
-      // Multi-project mode
-      const projects = JSON.parse(fs.readFileSync(projectsPath, 'utf-8'));
-      console.log(`Multi-project analysis: ${projects.length} projects\n`);
-
-      for (const proj of projects) {
-        console.log(`### Project: ${path.basename(proj.projectPath)} (${proj.baseRef} → ${proj.targetRef})`);
-        console.log(`Files: ${proj.stats.filesChanged} (+${proj.stats.additions}/-${proj.stats.deletions})`);
-        if (proj.files.length > 0) {
-          for (const f of proj.files.slice(0, 50)) {
-            console.log(`  [${f.status}] ${f.path}`);
-          }
-          if (proj.files.length > 50) console.log(`  ... and ${proj.files.length - 50} more`);
-        }
-        console.log('');
-      }
-    } else {
-      // Single project mode (backward compatible)
-      const filesJson = fs.readFileSync(path.join(diffDir, 'files.json'), 'utf-8');
-      const commitsJson = fs.readFileSync(path.join(diffDir, 'commits.json'), 'utf-8');
-      const rawDiff = fs.readFileSync(path.join(diffDir, 'raw.diff'), 'utf-8');
-      const files = JSON.parse(filesJson);
-      const commits = JSON.parse(commitsJson);
-
-      console.log(`## Changed Files (${files.length} files)`);
-      console.log(files.map((f: any) => `- [${f.status}] ${f.path} (+${f.additions}/-${f.deletions})`).join('\n'));
-      console.log(`\n## Commits (${commits.length} commits)`);
-      console.log(commits.map((c: any) => `- ${c.hash}: ${c.message} (${c.author})`).join('\n'));
-      console.log(`\n## Raw Diff (first 10000 chars)`);
-      console.log(rawDiff.slice(0, 10000));
-    }
-
-    if (projectsPath && fs.existsSync(projectsPath)) {
-      console.log(`\n## Task (Cross-Project Impact Analysis)`);
-      console.log(`Analyze changes across ALL projects. Key considerations:`);
-      console.log(`1. Backend API changes → which frontend pages call these APIs?`);
-      console.log(`2. Frontend component changes → which backend endpoints are affected?`);
-      console.log(`3. Identify cross-project dependencies and breaking changes.`);
-    } else {
-      console.log(`\n## Task`);
-      console.log(`Analyze the changes above and identify affected frontend features.`);
-    }
-
-    console.log(`\nWrite impact analysis to: ${outputDir}/impact.json`);
+    analyzeCommand({
+      diffDir: options.diff,
+      output: options.output,
+    });
   });
 
 program.parse();

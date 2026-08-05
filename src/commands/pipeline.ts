@@ -6,6 +6,7 @@ import { execTestsCommand } from './exec-tests';
 import { reportCommand } from './report';
 import { isRemoteUrl, clearCloneCache } from '../git/diff';
 import { hasCodeGraph, traceImpact } from '../codegraph/tracer';
+import { buildAnalyzePrompt, loadExistingAnalysis } from '../ai/prompt';
 import type { ProjectSpec, ImpactAnalysis } from '../types';
 
 export interface PipelineOptions {
@@ -147,18 +148,26 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
 
   // ---- Step 2: AI Impact Analysis ----
   if (fs.existsSync(impactPath)) {
-    const existing = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
-    console.log(`\n⏭️  Step 2/6: Analysis already exists (${existing.affectedPages?.length || 0} affected pages)`);
+    const existing = loadExistingAnalysis(analysisDir);
+    console.log(`\n⏭️  Step 2/6: Analysis already exists (${existing?.affectedPages?.length || 0} affected pages)`);
   } else {
+    // Auto-build the analysis prompt from diff + trace data
+    const { prompt, summary } = buildAnalyzePrompt({
+      diffDir,
+      traceDir: fs.existsSync(path.join(traceDir, 'trace.json')) ? traceDir : undefined,
+    });
+    fs.mkdirSync(analysisDir, { recursive: true });
+    fs.writeFileSync(path.join(analysisDir, 'analyze-prompt.md'), prompt);
+
     console.log(`\n━━━ Step 2/6: AI Impact Analysis ━━━`);
     console.log(`   Skill: /e2e-analyze`);
-    console.log(`   Input:  ${diffDir}/`);
-    if (fs.existsSync(path.join(traceDir, 'trace.json'))) {
-      console.log(`   Trace:  ${traceDir}/trace.json (CodeGraph chains available)`);
+    console.log(`   Files: ${summary.fileCount} | Commits: ${summary.commitCount}`);
+    if (summary.traceChains > 0) {
+      console.log(`   Trace: ${summary.traceChains} chains (${summary.traceLowConfidence} low-confidence, ${summary.traceHighPages} candidate pages)`);
     }
+    console.log(`   Prompt: ${path.join(analysisDir, 'analyze-prompt.md')} (${(summary.diffSizeBytes / 1024).toFixed(1)} KB)`);
     console.log(`   Output: ${impactPath}`);
-    console.log(`\n   Claude Code reads the diff, applies 4-stage analysis`);
-    console.log(`   (file classification → code understanding → feature derivation → test scenarios),`);
+    console.log(`\n   Claude Code reads the prompt, applies 4-stage analysis,`);
     console.log(`   and writes the structured impact.json.`);
     console.log(`\n   Run /e2e-analyze now, then re-run with --resume to continue.`);
     console.log(`\n⏸️  Pipeline paused — waiting for impact.json`);
