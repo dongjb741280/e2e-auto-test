@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { traceImpact, traceFile, hasCodeGraph } from '../codegraph/tracer';
-import type { TraceResult } from '../codegraph/tracer';
+import type { TraceResult } from '../types';
 
 export interface TraceCommandOptions {
   project: string;

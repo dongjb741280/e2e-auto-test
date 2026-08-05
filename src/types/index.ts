@@ -96,6 +96,41 @@ export interface PageSnapshot {
 }
 
 // ============================================================
+// CodeGraph Trace Types (Step 1.5)
+// ============================================================
+
+export interface TraceHop {
+  file: string;
+  relation: string;      // calls | imports | references | instantiates | extends | api-consumer
+  symbol: string;
+  terminal?: boolean;
+  terminalReason?: string;
+}
+
+export interface SymbolExport {
+  id: string;
+  kind: string;
+  name: string;
+  qualifiedName: string;
+  signature: string | null;
+  startLine: number;
+}
+
+export interface FileChain {
+  sourceFile: string;
+  symbols: SymbolExport[];
+  hops: TraceHop[];
+  affectedPages: string[];
+}
+
+export interface TraceResult {
+  source: 'codegraph' | 'unavailable';
+  tracedAt: string;
+  chains: FileChain[];
+  affectedPages: { route: string; file: string }[];
+}
+
+// ============================================================
 // Generated Test Types (Step 4)
 // ============================================================
 

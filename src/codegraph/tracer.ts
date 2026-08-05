@@ -1,41 +1,9 @@
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import type { TraceHop, SymbolExport, FileChain, TraceResult } from '../types';
 
-// ============================================================
-// Types
-// ============================================================
-
-export interface TraceHop {
-  file: string;
-  relation: string;    // calls | imports | references | instantiates | extends
-  symbol: string;
-  terminal?: boolean;
-  terminalReason?: string;
-}
-
-export interface SymbolExport {
-  id: string;
-  kind: string;
-  name: string;
-  qualifiedName: string;
-  signature: string | null;
-  startLine: number;
-}
-
-export interface FileChain {
-  sourceFile: string;
-  symbols: SymbolExport[];
-  hops: TraceHop[];
-  affectedPages: string[];
-}
-
-export interface TraceResult {
-  source: 'codegraph' | 'unavailable';
-  tracedAt: string;
-  chains: FileChain[];
-  affectedPages: { route: string; file: string }[];
-}
+export type { TraceHop, SymbolExport, FileChain, TraceResult };
 
 // ============================================================
 // CodeGraph detection
