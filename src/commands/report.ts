@@ -16,28 +16,22 @@ export interface ReportCommandOptions {
 export function reportCommand(options: ReportCommandOptions): string {
   const outputDir = options.output || path.join(process.cwd(), 'test-output', 'reports');
 
-  // Load analysis
-  let analysis: ImpactAnalysis = { summary: 'No analysis found', affectedPages: [], riskLevel: 'low', recommendation: '' };
-  if (options.analysis && fs.existsSync(options.analysis)) {
-    analysis = JSON.parse(fs.readFileSync(options.analysis, 'utf-8'));
-  } else {
-    // Try default path
-    const defaultAnalysis = path.join(process.cwd(), 'test-output', 'analysis', 'impact.json');
-    if (fs.existsSync(defaultAnalysis)) {
-      analysis = JSON.parse(fs.readFileSync(defaultAnalysis, 'utf-8'));
-    }
+  function safeJSON<T>(filePath: string, fallback: T): T {
+    try {
+      if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch { /* corrupt JSON — use fallback */ }
+    return fallback;
   }
 
+  // Load analysis
+  const defaultAnalysis = path.join(process.cwd(), 'test-output', 'analysis', 'impact.json');
+  const analysis: ImpactAnalysis = safeJSON(options.analysis || defaultAnalysis, {
+    summary: 'No analysis found', affectedPages: [], riskLevel: 'low' as const, recommendation: '',
+  });
+
   // Load results
-  let results: ExecutionResult[] = [];
-  if (options.results && fs.existsSync(options.results)) {
-    results = JSON.parse(fs.readFileSync(options.results, 'utf-8'));
-  } else {
-    const defaultResults = path.join(process.cwd(), 'test-output', 'results', 'results.json');
-    if (fs.existsSync(defaultResults)) {
-      results = JSON.parse(fs.readFileSync(defaultResults, 'utf-8'));
-    }
-  }
+  const defaultResults = path.join(process.cwd(), 'test-output', 'results', 'results.json');
+  const results: ExecutionResult[] = safeJSON(options.results || defaultResults, []);
 
   // Load diff stats (supports multi-project summary.json)
   let diff: DiffStats = { additions: 0, deletions: 0, filesChanged: 0 };

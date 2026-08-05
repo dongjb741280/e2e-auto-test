@@ -13,10 +13,10 @@ export interface ExecuteOptions {
 /**
  * Generates a minimal Playwright config for running the generated tests.
  */
-function generatePlaywrightConfig(testDir: string, baseUrl: string, outputDir: string, headed: boolean): string {
-  const absTestDir = path.resolve(testDir);
-  const resultsDir = path.resolve(path.join(outputDir, 'results'));
+function generatePlaywrightConfig(testDir: string, baseUrl: string, resultsDir: string, headed: boolean): string {
   fs.mkdirSync(resultsDir, { recursive: true });
+  const absTestDir = path.resolve(testDir);
+  const absResultsDir = path.resolve(resultsDir);
 
   return `
 import { defineConfig } from '@playwright/test';
@@ -31,8 +31,8 @@ export default defineConfig({
     video: 'off',
   },
   reporter: [
-    ['json', { outputFile: '${resultsDir.replace(/\\/g, '\\\\')}/results.json' }],
     ['list'],
+    ['json', { outputFile: '${absResultsDir.replace(/\\/g, '\\\\')}/results.json' }],
   ],
   timeout: 30000,
   retries: 0,
@@ -41,45 +41,39 @@ export default defineConfig({
 }
 
 /**
- * Parses Playwright's JSON reporter output into ExecutionResult[].
+ * Parse Playwright test stdout lines into ExecutionResult[].
+ * Relies on the 'list' reporter format: "  ✓  N  file › suite › test (duration)"
  */
-function parsePlaywrightResults(resultsJsonPath: string): ExecutionResult[] {
-  if (!fs.existsSync(resultsJsonPath)) return [];
-
-  const raw = JSON.parse(fs.readFileSync(resultsJsonPath, 'utf-8'));
+function parseStdout(stdout: string): ExecutionResult[] {
   const results: ExecutionResult[] = [];
+  const lines = stdout.split('\n');
+  const testLineRe = /^  ([✓✘✖○])\s+\d+\s+(.+?)\s+\(([\d.]+s)\)/;
 
-  for (const suite of raw.suites || []) {
-    for (const spec of suite.specs || []) {
-      const tests = spec.tests || [];
-      for (const test of tests) {
-        const results_data = test.results || [];
-        // Use the first result (no retries)
-        const lastResult = results_data[results_data.length - 1];
-        if (!lastResult) continue;
+  for (const line of lines) {
+    const m = line.match(testLineRe);
+    if (!m) continue;
+    const icon = m[1];
+    const fullTitle = m[2];
+    const durationStr = m[3];
 
-        const status: ExecutionResult['status'] =
-          lastResult.status === 'passed' ? 'passed'
-          : lastResult.status === 'skipped' ? 'skipped'
-          : 'failed';
+    const status: ExecutionResult['status'] =
+      icon === '✓' ? 'passed' : icon === '✘' ? 'failed' : 'skipped';
 
-        const scenarios: ScenarioResult[] = [
-          {
-            name: test.title,
-            status: status === 'passed' ? 'passed' : 'failed',
-            duration: lastResult.duration || 0,
-            error: lastResult.error?.message,
-          },
-        ];
+    const durationMs = parseFloat(durationStr) * 1000;
+    const filePart = fullTitle.split(' › ')[0] || 'unknown';
 
-        results.push({
-          testFile: path.basename(spec.file),
-          status,
-          duration: lastResult.duration || 0,
-          scenarios,
-        });
-      }
-    }
+    const scenario: ScenarioResult = {
+      name: fullTitle,
+      status: status === 'passed' ? 'passed' : 'failed',
+      duration: durationMs,
+    };
+
+    results.push({
+      testFile: path.basename(filePart),
+      status,
+      duration: durationMs,
+      scenarios: [scenario],
+    });
   }
 
   return results;
@@ -95,28 +89,39 @@ export async function executeTests(options: ExecuteOptions): Promise<ExecutionRe
     throw new Error(`Test directory not found: ${testDir}`);
   }
 
+  const resultsDir = path.join(outputDir, 'results');
   const configPath = path.join(outputDir, 'playwright.config.ts');
-  const config = generatePlaywrightConfig(testDir, baseUrl, outputDir, headed);
+  const config = generatePlaywrightConfig(testDir, baseUrl, resultsDir, headed);
   fs.writeFileSync(configPath, config);
 
   console.log(`Running tests from: ${testDir}`);
-  console.log(`Base URL: ${baseUrl}`);
-  console.log(`Config: ${configPath}\n`);
+  console.log(`Base URL: ${baseUrl}\n`);
+
+  let stdout = '';
 
   try {
-    execSync(`npx playwright test --config="${configPath}"`, {
+    stdout = execSync(`npx playwright test --config="${configPath}"`, {
       encoding: 'utf-8',
-      stdio: 'inherit',
+      stdio: 'pipe',
       cwd: process.cwd(),
     });
-  } catch (err) {
-    // Playwright exits non-zero on test failures — that's expected
-    console.log('Some tests failed (expected behavior).');
+  } catch (err: any) {
+    // Playwright exits non-zero on test failures — expected
+    stdout = err.stdout || '';
+    if (err.stderr) console.error(err.stderr);
   }
+
+  // Print the output so the user can see test progress
+  console.log(stdout);
 
   // Cleanup config
   try { fs.unlinkSync(configPath); } catch { /* ignore */ }
 
-  const resultsJsonPath = path.resolve(path.join(outputDir, 'results', 'results.json'));
-  return parsePlaywrightResults(resultsJsonPath);
+  // Parse results from stdout
+  const results = parseStdout(stdout);
+
+  // Save parsed results
+  fs.writeFileSync(path.join(resultsDir, 'results.json'), JSON.stringify(results, null, 2));
+
+  return results;
 }

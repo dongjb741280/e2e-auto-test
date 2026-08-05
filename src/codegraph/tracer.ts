@@ -133,32 +133,6 @@ function findCallers(dbPath: string, filePath: string): { file: string; relation
   }));
 }
 
-/**
- * Find callers of a SPECIFIC symbol (not the whole file).
- * More precise: if only one method changed, only trace its callers.
- */
-function findCallersOfSymbol(dbPath: string, symbolId: string): { file: string; relation: string; viaSymbol: string }[] {
-  const rows = queryJSON(dbPath, `
-    SELECT DISTINCT
-      n2.file_path AS caller_file,
-      e.kind      AS relation,
-      n2.name     AS caller_symbol
-    FROM edges e
-    JOIN nodes n2 ON e.source = n2.id
-    WHERE e.target = '${symbolId}'
-      AND e.kind IN ('imports', 'calls', 'references', 'instantiates', 'extends', 'implements')
-      AND n2.file_path NOT LIKE '.agents/%'
-      AND n2.file_path NOT LIKE '.claude/%'
-    ORDER BY n2.file_path
-  `);
-
-  return rows.map(r => ({
-    file: r.caller_file,
-    relation: r.relation,
-    viaSymbol: r.caller_symbol || r.caller_file,
-  }));
-}
-
 // ============================================================
 // Step 3: Define "frontend page" (terminal detection)
 // ============================================================

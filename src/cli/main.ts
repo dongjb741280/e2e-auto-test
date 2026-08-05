@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from 'fs';
+import path from 'path';
 import { Command } from 'commander';
 import { diffCommand } from '../commands/diff';
 import { browseCommand } from '../commands/browse';
@@ -207,9 +209,6 @@ program
   .option('-d, --diff-dir <dir>', 'Diff 输出目录', 'test-output/diff')
   .option('-o, --output <dir>', '分析结果输出目录', 'test-output/analysis')
   .action((options) => {
-    const fs = require('fs');
-    const path = require('path');
-
     const diffDir = options.diff;
     const outputDir = options.output;
 

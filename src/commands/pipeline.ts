@@ -22,7 +22,7 @@ export interface PipelineOptions {
 }
 
 // Directories cleared between runs (intermediate data only — tests/ and reports/ are never cleared)
-const INTERMEDIATE_DIRS = ['diff', 'analysis', 'pages', 'results'];
+const INTERMEDIATE_DIRS = ['diff', 'analysis', 'pages', 'results', 'trace'];
 
 function clearIntermediateDirs(outputRoot: string): void {
   for (const dir of INTERMEDIATE_DIRS) {
@@ -97,8 +97,8 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
       // Collect changed files from diff output
       const changedFiles: string[] = [];
       if (fs.existsSync(path.join(diffDir, 'projects.json'))) {
-        const projects = JSON.parse(fs.readFileSync(path.join(diffDir, 'projects.json'), 'utf-8'));
-        for (const p of projects) {
+        const diffProjects = JSON.parse(fs.readFileSync(path.join(diffDir, 'projects.json'), 'utf-8'));
+        for (const p of diffProjects) {
           for (const f of p.files || []) changedFiles.push(f.path);
         }
       } else if (fs.existsSync(filesJson)) {
@@ -115,9 +115,18 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
           const result = traceImpact(p.path, projFiles, 3);
           const chainsWithPages = result.chains.filter(c => c.affectedPages.length > 0);
           console.log(`   → ${chainsWithPages.length} chains reach frontend, ${result.affectedPages.length} pages affected`);
-          // Save trace result
+          // Fold into existing trace (multi-project accumulates)
           fs.mkdirSync(traceDir, { recursive: true });
-          fs.writeFileSync(path.join(traceDir, 'trace.json'), JSON.stringify(result, null, 2));
+          const traceFile = path.join(traceDir, 'trace.json');
+          let existing: any = { chains: [], affectedPages: [] };
+          if (fs.existsSync(traceFile)) {
+            try { existing = JSON.parse(fs.readFileSync(traceFile, 'utf-8')); } catch { /* keep defaults */ }
+          }
+          existing.chains = [...(existing.chains || []), ...result.chains];
+          existing.affectedPages = [...(existing.affectedPages || []), ...result.affectedPages];
+          existing.source = 'codegraph';
+          existing.tracedAt = new Date().toISOString();
+          fs.writeFileSync(traceFile, JSON.stringify(existing, null, 2));
         }
       } else {
         console.log('\n⏭️  Step 1.5/6: CodeGraph Trace skipped (no CodeGraph index found)');
@@ -147,7 +156,7 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
 
   // ---- Step 3: Browse Affected Pages ----
   let pagesToBrowse = options.pages || [];
-  if (pagesToBrowse.length === 0 && fs.existsSync(impactPath)) {
+  if (pagesToBrowse.length === 0) {
     const analysis: ImpactAnalysis = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
     pagesToBrowse = analysis.affectedPages.map(p => p.route);
   }
