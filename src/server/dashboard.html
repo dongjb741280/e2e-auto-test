@@ -71,6 +71,7 @@
   .video { max-width:100%; border-radius:6px; border:1px solid var(--border); }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
   .img-preview { max-width:400px; max-height:300px; border-radius:6px; border:1px solid var(--border); cursor:pointer; }
+  input[type="text"], input[type="checkbox"] { accent-color:var(--accent); }
   .page-row { display:flex; gap:20px; margin-bottom:16px; padding:12px; background:var(--bg2); border-radius:8px; border:1px solid var(--border); }
   .page-info { flex:1; }
   .page-info h3 { font-size:14px; margin-bottom:4px; }
@@ -102,6 +103,7 @@ const TABS = [
   { id:'tests',    label:'测试' },
   { id:'results',  label:'结果' },
   { id:'reports',  label:'报告' },
+  { id:'tasks',    label:'任务' },
 ];
 let activeTab = 'overview';
 let data = {};
@@ -113,6 +115,17 @@ async function api(p) {
 async function apiText(p) {
   const r = await fetch('/api/' + p);
   return r.ok ? r.text() : null;
+}
+async function apiPost(p, body) {
+  const r = await fetch('/api/' + p, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  return r.ok ? r.json() : null;
+}
+async function apiPut(p, body) {
+  const r = await fetch('/api/' + p, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  return r.ok ? r.json() : null;
+}
+async function apiDelete(p) {
+  await fetch('/api/' + p, { method:'DELETE' });
 }
 
 async function refresh() {
@@ -161,6 +174,7 @@ function renderContent() {
     case 'tests':    c.innerHTML = renderTests(); break;
     case 'results':  c.innerHTML = renderResults(); break;
     case 'reports':  c.innerHTML = renderReportsTab(); break;
+    case 'tasks':    renderTasksTab(c); break;
   }
 }
 
@@ -353,6 +367,80 @@ async function renderReportsTab() {
 }
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ---- Tasks ----
+async function renderTasksTab(container) {
+  const tasks = await api('tasks') || [];
+  container.innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="label">任务数</div><div class="value blue">${tasks.length}</div></div>
+    </div>
+    <details style="margin-bottom:16px">
+      <summary style="cursor:pointer;color:var(--accent);padding:8px 0">+ 新建任务</summary>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px" id="taskForm">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><label style="font-size:12px;color:var(--text2)">任务名称</label><input id="tfName" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="如: v1.0→v1.1 回归"></div>
+          <div><label style="font-size:12px;color:var(--text2)">Base URL</label><input id="tfBaseUrl" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="http://localhost:3000"></div>
+          <div><label style="font-size:12px;color:var(--text2)">项目路径</label><input id="tfProject" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="/path/to/project"></div>
+          <div><label style="font-size:12px;color:var(--text2)">页面路由 (可选)</label><input id="tfPages" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="/login,/dashboard"></div>
+          <div><label style="font-size:12px;color:var(--text2)">基线版本</label><input id="tfBase" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="v1.0.0"></div>
+          <div><label style="font-size:12px;color:var(--text2)">目标版本</label><input id="tfTarget" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="v1.1.0"></div>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:12px">
+          <label style="font-size:12px;color:var(--text2)"><input type="checkbox" id="tfHeaded"> 有头模式</label>
+          <button onclick="addTask()" style="background:var(--accent);border:none;color:#fff;padding:6px 20px;border-radius:6px;cursor:pointer">保存</button>
+        </div>
+      </div>
+    </details>
+    <div id="taskList">${tasks.map(t => taskCard(t)).join('')}</div>`;
+}
+
+function taskCard(t) {
+  const dt = t.createdAt ? new Date(t.createdAt).toLocaleString('zh-CN') : '';
+  return `<div class="chain" style="position:relative">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <div class="source">${esc(t.name)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">${esc(t.project)}</div>
+        <div style="font-size:11px;color:var(--accent)">${esc(t.base)} → ${esc(t.target)} | ${esc(t.baseUrl)}</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">${dt}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="runTask('${t.id}')" style="background:var(--green);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px">运行</button>
+        <button onclick="deleteTask('${t.id}')" style="background:var(--red);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px">删除</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function addTask() {
+  const task = {
+    name: document.getElementById('tfName').value || 'Untitled',
+    project: document.getElementById('tfProject').value,
+    base: document.getElementById('tfBase').value,
+    target: document.getElementById('tfTarget').value,
+    baseUrl: document.getElementById('tfBaseUrl').value,
+    headed: document.getElementById('tfHeaded').checked,
+    pages: document.getElementById('tfPages').value || undefined,
+  };
+  if (!task.project || !task.base || !task.target || !task.baseUrl) {
+    alert('项目路径、基线版本、目标版本、Base URL 为必填项');
+    return;
+  }
+  await apiPost('tasks', task);
+  refresh();
+}
+
+async function runTask(id) {
+  const r = await apiPost('tasks/' + id + '/run', {});
+  if (r?.ok) alert('任务已启动 (PID: ' + r.pid + ')，可在 CLI 查看输出');
+}
+
+async function deleteTask(id) {
+  if (!confirm('确认删除?')) return;
+  await apiDelete('tasks/' + id);
+  refresh();
+}
 
 // Init
 renderTabs();

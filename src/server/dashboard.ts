@@ -1,8 +1,35 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 
 let outputRoot = path.join(process.cwd(), 'test-output');
+
+// ---- Task Config ----
+
+interface TaskConfig {
+  id: string;
+  name: string;
+  project: string;
+  base: string;
+  target: string;
+  baseUrl: string;
+  headed?: boolean;
+  pages?: string;
+  createdAt: string;
+}
+
+const TASKS_FILE = path.join(process.cwd(), 'test-output', '.tasks.json');
+
+function loadTasks(): TaskConfig[] {
+  try { return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf-8')); } catch { return []; }
+}
+
+function saveTasks(tasks: TaskConfig[]): void {
+  const dir = path.dirname(TASKS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
+}
 
 // ---- Helpers ----
 
@@ -119,11 +146,83 @@ function handleReports(res: http.ServerResponse, url: URL): void {
   }
 }
 
+// ---- Task API ----
+
+function handleTasksGet(res: http.ServerResponse): void {
+  jsonResponse(res, loadTasks());
+}
+
+function handleTasksPost(req: http.IncomingMessage, res: http.ServerResponse): void {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', () => {
+    try {
+      const task: TaskConfig = JSON.parse(body);
+      const tasks = loadTasks();
+      task.id = String(Date.now());
+      task.createdAt = new Date().toISOString();
+      tasks.push(task);
+      saveTasks(tasks);
+      jsonResponse(res, task, 201);
+    } catch (e) { jsonResponse(res, { error: String(e) }, 400); }
+  });
+}
+
+function handleTasksPut(req: http.IncomingMessage, res: http.ServerResponse, id: string): void {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', () => {
+    try {
+      const update = JSON.parse(body);
+      const tasks = loadTasks();
+      const idx = tasks.findIndex(t => t.id === id);
+      if (idx < 0) return jsonResponse(res, { error: 'Not found' }, 404);
+      tasks[idx] = { ...tasks[idx], ...update, id: tasks[idx].id, createdAt: tasks[idx].createdAt };
+      saveTasks(tasks);
+      jsonResponse(res, tasks[idx]);
+    } catch (e) { jsonResponse(res, { error: String(e) }, 400); }
+  });
+}
+
+function handleTasksDelete(res: http.ServerResponse, id: string): void {
+  let tasks = loadTasks();
+  tasks = tasks.filter(t => t.id !== id);
+  saveTasks(tasks);
+  jsonResponse(res, { ok: true });
+}
+
+function handleTasksRun(res: http.ServerResponse, id: string): void {
+  const tasks = loadTasks();
+  const task = tasks.find(t => t.id === id);
+  if (!task) return jsonResponse(res, { error: 'Task not found' }, 404);
+
+  const args = [
+    'dist/cli/main.js', 'run',
+    '--project', task.project,
+    '--base', task.base,
+    '--target', task.target,
+    '--base-url', task.baseUrl,
+    ...(task.headed ? ['--headed'] : []),
+    ...(task.pages ? ['--pages', task.pages] : []),
+  ];
+
+  const proc = spawn('node', args, { cwd: process.cwd(), stdio: 'ignore' });
+  proc.on('error', () => {});
+  jsonResponse(res, { ok: true, pid: proc.pid, taskId: id });
+}
+
 // ---- Router ----
 
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
+
+  // Task API
+  if (p === '/api/tasks' && req.method === 'GET')     return handleTasksGet(res);
+  if (p === '/api/tasks' && req.method === 'POST')    return handleTasksPost(req, res);
+  if (p.startsWith('/api/tasks/') && req.method === 'PUT')  return handleTasksPut(req, res, p.split('/')[3]);
+  if (p.startsWith('/api/tasks/') && req.method === 'DELETE') return handleTasksDelete(res, p.split('/')[3]);
+  if (p.startsWith('/api/tasks/') && p.endsWith('/run')) return handleTasksRun(res, p.split('/')[3]);
 
   // API routes
   if (p === '/api/status')                return handleStatus(res);
