@@ -174,8 +174,9 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
     return;
   }
 
-  // ---- Step 3: Browse Affected Pages ----
+  // ---- Step 3: Browse Affected Pages (optional — skips gracefully if app not running) ----
   let pagesToBrowse = options.pages || [];
+  let hasDomData = false;
   if (pagesToBrowse.length === 0) {
     const analysis: ImpactAnalysis = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
     pagesToBrowse = analysis.affectedPages.map(p => p.route);
@@ -183,12 +184,18 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
 
   if (pagesToBrowse.length > 0) {
     console.log(`\n━━━ Step 3/6: Browsing Affected Pages ━━━`);
-    await browseCommand({
-      baseUrl,
-      pages: pagesToBrowse,
-      output: pagesDir,
-      headed: options.headed,
-    });
+    try {
+      await browseCommand({
+        baseUrl,
+        pages: pagesToBrowse,
+        output: pagesDir,
+        headed: options.headed,
+      });
+      hasDomData = true;
+    } catch (err) {
+      console.log(`   ⚠️  Browse failed (app not running or pages inaccessible): ${(err as Error).message}`);
+      console.log(`   → Tests will be generated from impact.json descriptions alone (selectors need manual verification)`);
+    }
   } else {
     console.log(`\n⏭️  Step 3/6: Skipped (no pages to browse)`);
   }
@@ -200,10 +207,14 @@ export async function pipelineCommand(options: PipelineOptions): Promise<void> {
   } else {
     console.log(`\n━━━ Step 4/6: AI Test Generation ━━━`);
     console.log(`   Skill: /e2e-generate`);
-    console.log(`   Input:  ${analysisDir}/impact.json + ${pagesDir}/`);
+    console.log(`   Input:  ${analysisDir}/impact.json`);
+    if (hasDomData) {
+      console.log(`   DOM:    ${pagesDir}/ (real selectors available)`);
+    } else {
+      console.log(`   DOM:    not available — selectors will be inferred from scenario descriptions`);
+    }
     console.log(`   Output: ${testsDir}/*.spec.ts`);
-    console.log(`\n   Claude Code reads the analysis and page DOM snapshots,`);
-    console.log(`   matches scenarios to real selectors,`);
+    console.log(`\n   Claude Code reads the analysis + available DOM data,`);
     console.log(`   and generates self-contained Playwright test files.`);
     console.log(`\n   Run /e2e-generate to create tests, then re-run with --resume.`);
     console.log(`\n⏸️  Pipeline paused — waiting for test files`);
