@@ -5,6 +5,11 @@ import { spawn } from 'child_process';
 
 let outputRoot = path.join(process.cwd(), 'test-output');
 
+function resolveRoot(url: URL): string {
+  const q = url.searchParams.get('output');
+  return q ? path.resolve(q) : outputRoot;
+}
+
 // ---- Task Config ----
 
 interface TaskConfig {
@@ -85,32 +90,33 @@ function handleStatus(res: http.ServerResponse, url: URL): void {
   jsonResponse(res, { steps: getStatus(dir), outputRoot: dir });
 }
 
-function handleDiff(res: http.ServerResponse): void {
-  const projectsPath = path.join(outputRoot, 'diff', 'projects.json');
+function handleDiff(res: http.ServerResponse, url: URL): void {
+  const root = resolveRoot(url);
+  const projectsPath = path.join(root, 'diff', 'projects.json');
   if (fs.existsSync(projectsPath)) {
     jsonResponse(res, readJSON(projectsPath, []));
   } else {
-    const files = readJSON(path.join(outputRoot, 'diff', 'files.json'), []);
-    const commits = readJSON(path.join(outputRoot, 'diff', 'commits.json'), []);
-    const summary = readJSON(path.join(outputRoot, 'diff', 'summary.json'), {});
+    const files = readJSON(path.join(root, 'diff', 'files.json'), []);
+    const commits = readJSON(path.join(root, 'diff', 'commits.json'), []);
+    const summary = readJSON(path.join(root, 'diff', 'summary.json'), {});
     jsonResponse(res, { projects: [{ files, commits, stats: summary }] });
   }
 }
 
-function handleTrace(res: http.ServerResponse): void {
-  jsonResponse(res, readJSON(path.join(outputRoot, 'trace', 'trace.json'), { chains: [], affectedPages: [] }));
+function handleTrace(res: http.ServerResponse, url: URL): void {
+  jsonResponse(res, readJSON(path.join(resolveRoot(url), 'trace', 'trace.json'), { chains: [], affectedPages: [] }));
 }
 
-function handleAnalysis(res: http.ServerResponse): void {
-  jsonResponse(res, readJSON(path.join(outputRoot, 'analysis', 'impact.json'), null));
+function handleAnalysis(res: http.ServerResponse, url: URL): void {
+  jsonResponse(res, readJSON(path.join(resolveRoot(url), 'analysis', 'impact.json'), null));
 }
 
-function handleAnalysisPrompt(res: http.ServerResponse): void {
-  serveFile(res, path.join(outputRoot, 'analysis', 'analyze-prompt.md'), 'text/markdown');
+function handleAnalysisPrompt(res: http.ServerResponse, url: URL): void {
+  serveFile(res, path.join(resolveRoot(url), 'analysis', 'analyze-prompt.md'), 'text/markdown');
 }
 
-function handlePages(res: http.ServerResponse): void {
-  jsonResponse(res, readJSON(path.join(outputRoot, 'pages', 'pages.json'), []));
+function handlePages(res: http.ServerResponse, url: URL): void {
+  jsonResponse(res, readJSON(path.join(resolveRoot(url), 'pages', 'pages.json'), []));
 }
 
 function handlePageImage(res: http.ServerResponse, url: URL): void {
@@ -119,7 +125,8 @@ function handlePageImage(res: http.ServerResponse, url: URL): void {
 }
 
 function handleTests(res: http.ServerResponse, url: URL): void {
-  const testsDir = path.join(outputRoot, 'tests');
+  const root = resolveRoot(url);
+  const testsDir = path.join(root, 'tests');
   const file = url.searchParams.get('file');
   if (file) {
     serveFile(res, path.join(testsDir, file), 'text/typescript');
@@ -131,12 +138,12 @@ function handleTests(res: http.ServerResponse, url: URL): void {
   }
 }
 
-function handleResults(res: http.ServerResponse): void {
-  jsonResponse(res, readJSON(path.join(outputRoot, 'results', 'results.json'), []));
+function handleResults(res: http.ServerResponse, url: URL): void {
+  jsonResponse(res, readJSON(path.join(resolveRoot(url), 'results', 'results.json'), []));
 }
 
 function handleReports(res: http.ServerResponse, url: URL): void {
-  const reportsDir = path.join(outputRoot, 'reports');
+  const reportsDir = path.join(resolveRoot(url), 'reports');
   const file = url.searchParams.get('file');
   if (file) {
     const ext = file.endsWith('.json') ? 'application/json' : 'text/markdown';
@@ -231,14 +238,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   // API routes
   if (p === '/api/status')                return handleStatus(res, url);
-  if (p === '/api/diff')                  return handleDiff(res);
-  if (p === '/api/trace')                 return handleTrace(res);
-  if (p === '/api/analysis')              return handleAnalysis(res);
-  if (p === '/api/analysis/prompt')       return handleAnalysisPrompt(res);
-  if (p === '/api/pages')                 return handlePages(res);
+  if (p === '/api/diff')                  return handleDiff(res, url);
+  if (p === '/api/trace')                 return handleTrace(res, url);
+  if (p === '/api/analysis')              return handleAnalysis(res, url);
+  if (p === '/api/analysis/prompt')       return handleAnalysisPrompt(res, url);
+  if (p === '/api/pages')                 return handlePages(res, url);
   if (p === '/api/pages/image')           return handlePageImage(res, url);
   if (p === '/api/tests')                 return handleTests(res, url);
-  if (p === '/api/results')               return handleResults(res);
+  if (p === '/api/results')               return handleResults(res, url);
   if (p === '/api/reports')               return handleReports(res, url);
 
   // Serve dashboard HTML

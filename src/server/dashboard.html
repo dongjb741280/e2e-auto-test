@@ -83,6 +83,11 @@
 <body>
 <div class="header">
   <h1>&#9670; E2E Change-Impact Dashboard</h1>
+  <div style="display:flex;align-items:center;gap:8px">
+    <select id="taskSelector" onchange="selectTask(this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px;max-width:200px">
+      <option value="">全局 (test-output/)</option>
+    </select>
+  </div>
   <div class="actions">
     <button onclick="refresh()">&#x21bb; 刷新</button>
     <span style="font-size:11px;color:var(--text2);align-self:center" id="info"></span>
@@ -106,14 +111,22 @@ const TABS = [
   { id:'reports',  label:'报告' },
 ];
 let activeTab = 'tasks';
+let selectedTaskId = '';
 let data = {};
 
+function apiPath(p) {
+  if (selectedTaskId) {
+    return p + (p.includes('?') ? '&' : '?') + 'output=test-output/' + selectedTaskId;
+  }
+  return p;
+}
+
 async function api(p) {
-  const r = await fetch('/api/' + p);
+  const r = await fetch('/api/' + apiPath(p));
   return r.ok ? r.json() : null;
 }
 async function apiText(p) {
-  const r = await fetch('/api/' + p);
+  const r = await fetch('/api/' + apiPath(p));
   return r.ok ? r.text() : null;
 }
 async function apiPost(p, body) {
@@ -369,13 +382,26 @@ async function renderReportsTab() {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ---- Tasks ----
-let taskDetailId = null;
+
+async function loadTaskSelector() {
+  const tasks = await api('tasks') || [];
+  const sel = document.getElementById('taskSelector');
+  sel.innerHTML = '<option value="">全局 (test-output/)</option>' +
+    tasks.map(t => `<option value="${t.id}" ${t.id===selectedTaskId?'selected':''}>${esc(t.name)}</option>`).join('');
+}
+
+function selectTask(id) {
+  selectedTaskId = id;
+  refresh();
+}
 
 async function renderTasksTab(container) {
   const tasks = await api('tasks') || [];
+  loadTaskSelector();
   container.innerHTML = `
     <div class="cards">
       <div class="card"><div class="label">任务数</div><div class="value blue">${tasks.length}</div></div>
+      ${selectedTaskId ? `<div class="card"><div class="label">当前任务</div><div class="value blue" style="font-size:16px">${esc((tasks.find(t=>t.id===selectedTaskId)||{}).name||'')}</div></div>` : ''}
     </div>
     <details style="margin-bottom:16px">
       <summary style="cursor:pointer;color:var(--accent);padding:8px 0">+ 新建任务</summary>
@@ -394,16 +420,16 @@ async function renderTasksTab(container) {
         </div>
       </div>
     </details>
-    <div id="taskList">${tasks.length ? tasks.map(t => taskCard(t)).join('') : '<div class="empty">暂无任务，点击上方「+ 新建任务」创建</div>'}</div>
-    <div id="taskDetail"></div>`;
+    <div id="taskList">${tasks.length ? tasks.map(t => taskCard(t)).join('') : '<div class="empty">暂无任务，点击上方「+ 新建任务」创建</div>'}</div>`;
 }
 
 function taskCard(t) {
   const dt = t.createdAt ? new Date(t.createdAt).toLocaleString('zh-CN') : '';
-  return `<div class="chain" style="position:relative;cursor:pointer" onclick="showTaskDetail('${t.id}')">
+  const sel = t.id === selectedTaskId ? 'border:2px solid var(--accent)' : '';
+  return `<div class="chain" style="position:relative;${sel}" onclick="selectTask('${t.id}')">
     <div style="display:flex;justify-content:space-between;align-items:start">
       <div style="flex:1">
-        <div class="source">${esc(t.name)}</div>
+        <div class="source">${esc(t.name)} ${t.id===selectedTaskId?'<span style="color:var(--accent);font-size:10px">▼ 当前</span>':''}</div>
         <div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(t.project)}</div>
         <div style="font-size:11px;color:var(--accent);margin-top:2px">${esc(t.base)} → ${esc(t.target)} | ${esc(t.baseUrl)}</div>
       </div>
@@ -413,59 +439,6 @@ function taskCard(t) {
       </div>
     </div>
   </div>`;
-}
-
-async function showTaskDetail(id) {
-  taskDetailId = id;
-  const tasks = await api('tasks') || [];
-  const t = tasks.find(x => x.id === id);
-  if (!t) return;
-  const status = await api('status?output=test-output/' + id) || { steps: [] };
-  const steps = status.steps || [];
-  const doneCount = steps.filter(s => s.done).length;
-  const detail = document.getElementById('taskDetail');
-  detail.innerHTML = `
-    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:center;justify-content:center" onclick="closeTaskDetail()">
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h2 style="font-size:18px">${esc(t.name)}</h2>
-          <button onclick="closeTaskDetail()" style="background:none;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer">✕</button>
-        </div>
-        <div class="cards" style="margin-bottom:16px">
-          <div class="card"><div class="label">Pipeline 进度</div><div class="value blue">${doneCount}/${steps.length}</div></div>
-          <div class="card"><div class="label">基线</div><div style="font-size:13px;margin-top:4px">${esc(t.base)}</div></div>
-          <div class="card"><div class="label">目标</div><div style="font-size:13px;margin-top:4px">${esc(t.target)}</div></div>
-        </div>
-        <div style="margin-bottom:12px">
-          <div style="font-size:12px;color:var(--text2)">项目: ${esc(t.project)}</div>
-          <div style="font-size:12px;color:var(--text2)">地址: ${esc(t.baseUrl)}</div>
-          ${t.pages ? `<div style="font-size:12px;color:var(--text2)">页面: ${esc(t.pages)}</div>` : ''}
-        </div>
-        <h3 style="font-size:14px;margin-bottom:8px">Pipeline 步骤</h3>
-        <table>
-          ${steps.map(s => `<tr>
-            <td>${s.done ? '&#x2705;' : '&#x23F3;'}</td>
-            <td>${s.label}</td>
-            <td style="color:${s.done?'var(--green)':'var(--text2)'}">${s.done ? '完成' : '等待中'}</td>
-          </tr>`).join('')}
-        </table>
-        ${doneCount > 0 ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
-          <span style="font-size:11px;color:var(--text2)">输出目录:</span>
-          <code style="font-size:11px;color:var(--accent)">test-output/${id}/</code>
-        </div>` : ''}
-        <div style="margin-top:16px;display:flex;gap:8px">
-          <button onclick="runTask('${t.id}');closeTaskDetail()" style="background:var(--green);border:none;color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer">运行 Pipeline</button>
-          <button onclick="closeTaskDetail()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:6px;cursor:pointer">关闭</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function closeTaskDetail() {
-  taskDetailId = null;
-  const detail = document.getElementById('taskDetail');
-  if (detail) detail.innerHTML = '';
 }
 
 async function addTask() {
