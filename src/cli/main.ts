@@ -7,6 +7,7 @@ import { execTestsCommand } from '../commands/exec-tests';
 import { reportCommand } from '../commands/report';
 import { traceCommand } from '../commands/trace';
 import { analyzeCommand } from '../commands/analyze';
+import { serveCommand } from '../commands/serve';
 import { pipelineCommand } from '../commands/pipeline';
 import type { ProjectSpec } from '../types';
 
@@ -212,6 +213,19 @@ program
       diffDir: options.diff,
       output: options.output,
     });
+  });
+
+// ============================================================
+// serve — Start visual dashboard server
+// ============================================================
+program
+  .command('serve')
+  .description('启动可视化 Dashboard (查看 Pipeline 进度和中间结果)')
+  .option('-p, --port <n>', 'HTTP 端口', '3456')
+  .option('-o, --output <dir>', '数据根目录', 'test-output')
+  .option('--open', '自动打开浏览器')
+  .action((options) => {
+    serveCommand({ port: options.port, output: options.output, open: options.open });
   });
 
 program.parse();
