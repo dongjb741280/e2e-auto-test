@@ -134,6 +134,26 @@ npx e2e-test analyze \
 
 读取 diff 数据，输出结构化分析提示（含文件列表、commits、raw diff），供 Claude Code 使用。
 
+### `serve` — 可视化 Dashboard
+
+```bash
+npx e2e-test serve \
+  [-p, --port <n>]       # HTTP 端口 (默认 3456)
+  [-o, --output <dir>]   # 数据根目录 (默认 test-output)
+  [--open]               # 自动打开浏览器
+```
+
+启动 Web Dashboard，可视化 Pipeline 进度和中间结果。可与 CLI 并行运行——CLI 写入文件，Dashboard 实时刷新。
+
+```bash
+# 前台运行 (Ctrl+C 停止)
+e2e-test serve --port 3456 --open
+
+# 后台运行
+e2e-test serve --port 3456 &
+kill %1   # 停止
+```
+
 ## 目录结构
 
 ```
@@ -144,14 +164,20 @@ e2e-auto-test/
 │   │   ├── pipeline.ts          # 全流程编排 (7-Step)
 │   │   ├── diff.ts              # Git diff 提取
 │   │   ├── trace.ts             # CodeGraph 依赖链追溯
+│   │   ├── analyze.ts           # AI 分析 prompt 构建
 │   │   ├── browse.ts            # 页面 DOM 提取
 │   │   ├── exec-tests.ts        # 测试执行
-│   │   └── report.ts            # 报告生成
+│   │   ├── report.ts            # 报告生成
+│   │   └── serve.ts             # Dashboard 服务
 │   ├── git/diff.ts              # Git 操作封装（远程 clone 支持）
+│   ├── ai/prompt.ts             # AI 分析 prompt 构建器
 │   ├── codegraph/tracer.ts      # CodeGraph SQL 追溯器
 │   ├── browser/
 │   │   ├── manager.ts           # Playwright 浏览器管理
 │   │   └── page-scraper.ts      # 页面 DOM + 选择器提取
+│   ├── server/
+│   │   ├── dashboard.ts         # HTTP 服务器 + REST API
+│   │   └── dashboard.html       # 单文件 SPA 前端
 │   ├── runner/executor.ts       # Playwright 测试执行器
 │   ├── reporter/index.ts        # Markdown 报告生成
 │   └── types/index.ts           # 20 个核心类型定义
