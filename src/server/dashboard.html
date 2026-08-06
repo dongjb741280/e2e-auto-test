@@ -369,6 +369,8 @@ async function renderReportsTab() {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ---- Tasks ----
+let taskDetailId = null;
+
 async function renderTasksTab(container) {
   const tasks = await api('tasks') || [];
   container.innerHTML = `
@@ -377,7 +379,7 @@ async function renderTasksTab(container) {
     </div>
     <details style="margin-bottom:16px">
       <summary style="cursor:pointer;color:var(--accent);padding:8px 0">+ 新建任务</summary>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px" id="taskForm">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div><label style="font-size:12px;color:var(--text2)">任务名称</label><input id="tfName" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="如: v1.0→v1.1 回归"></div>
           <div><label style="font-size:12px;color:var(--text2)">Base URL</label><input id="tfBaseUrl" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px;border-radius:4px" placeholder="http://localhost:3000"></div>
@@ -392,25 +394,78 @@ async function renderTasksTab(container) {
         </div>
       </div>
     </details>
-    <div id="taskList">${tasks.map(t => taskCard(t)).join('')}</div>`;
+    <div id="taskList">${tasks.map(t => taskCard(t)).join('')}</div>
+    <div id="taskDetail"></div>`;
 }
 
 function taskCard(t) {
   const dt = t.createdAt ? new Date(t.createdAt).toLocaleString('zh-CN') : '';
-  return `<div class="chain" style="position:relative">
+  return `<div class="chain" style="position:relative;cursor:pointer" onclick="showTaskDetail('${t.id}')">
     <div style="display:flex;justify-content:space-between;align-items:start">
-      <div>
+      <div style="flex:1">
         <div class="source">${esc(t.name)}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">${esc(t.project)}</div>
-        <div style="font-size:11px;color:var(--accent)">${esc(t.base)} → ${esc(t.target)} | ${esc(t.baseUrl)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">${dt}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(t.project)}</div>
+        <div style="font-size:11px;color:var(--accent);margin-top:2px">${esc(t.base)} → ${esc(t.target)} | ${esc(t.baseUrl)}</div>
       </div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
         <button onclick="runTask('${t.id}')" style="background:var(--green);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px">运行</button>
         <button onclick="deleteTask('${t.id}')" style="background:var(--red);border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px">删除</button>
       </div>
     </div>
   </div>`;
+}
+
+async function showTaskDetail(id) {
+  taskDetailId = id;
+  const tasks = await api('tasks') || [];
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  const status = await api('status?output=test-output/' + id) || { steps: [] };
+  const steps = status.steps || [];
+  const doneCount = steps.filter(s => s.done).length;
+  const detail = document.getElementById('taskDetail');
+  detail.innerHTML = `
+    <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:center;justify-content:center" onclick="closeTaskDetail()">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="font-size:18px">${esc(t.name)}</h2>
+          <button onclick="closeTaskDetail()" style="background:none;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer">✕</button>
+        </div>
+        <div class="cards" style="margin-bottom:16px">
+          <div class="card"><div class="label">Pipeline 进度</div><div class="value blue">${doneCount}/${steps.length}</div></div>
+          <div class="card"><div class="label">基线</div><div style="font-size:13px;margin-top:4px">${esc(t.base)}</div></div>
+          <div class="card"><div class="label">目标</div><div style="font-size:13px;margin-top:4px">${esc(t.target)}</div></div>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--text2)">项目: ${esc(t.project)}</div>
+          <div style="font-size:12px;color:var(--text2)">地址: ${esc(t.baseUrl)}</div>
+          ${t.pages ? `<div style="font-size:12px;color:var(--text2)">页面: ${esc(t.pages)}</div>` : ''}
+        </div>
+        <h3 style="font-size:14px;margin-bottom:8px">Pipeline 步骤</h3>
+        <table>
+          ${steps.map(s => `<tr>
+            <td>${s.done ? '&#x2705;' : '&#x23F3;'}</td>
+            <td>${s.label}</td>
+            <td style="color:${s.done?'var(--green)':'var(--text2)'}">${s.done ? '完成' : '等待中'}</td>
+          </tr>`).join('')}
+        </table>
+        ${doneCount > 0 ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text2)">输出目录:</span>
+          <code style="font-size:11px;color:var(--accent)">test-output/${id}/</code>
+        </div>` : ''}
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <button onclick="runTask('${t.id}');closeTaskDetail()" style="background:var(--green);border:none;color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer">运行 Pipeline</button>
+          <button onclick="closeTaskDetail()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 16px;border-radius:6px;cursor:pointer">关闭</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function closeTaskDetail() {
+  taskDetailId = null;
+  const detail = document.getElementById('taskDetail');
+  if (detail) detail.innerHTML = '';
 }
 
 async function addTask() {
@@ -433,7 +488,7 @@ async function addTask() {
 
 async function runTask(id) {
   const r = await apiPost('tasks/' + id + '/run', {});
-  if (r?.ok) alert('任务已启动 (PID: ' + r.pid + ')，可在 CLI 查看输出');
+  if (r?.ok) alert('任务已启动 (PID: ' + r.pid + ')，输出目录: test-output/' + id);
 }
 
 async function deleteTask(id) {

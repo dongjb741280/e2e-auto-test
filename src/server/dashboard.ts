@@ -68,18 +68,21 @@ function listJSONFiles(dir: string): string[] {
 
 // ---- API Handlers ----
 
-function handleStatus(res: http.ServerResponse): void {
-  const steps = [
-    { name: 'diff',     label: 'Git Diff',        done: fs.existsSync(path.join(outputRoot, 'diff', 'files.json')) || fs.existsSync(path.join(outputRoot, 'diff', 'projects.json')) },
-    { name: 'trace',    label: 'CodeGraph Trace',  done: fs.existsSync(path.join(outputRoot, 'trace', 'trace.json')) },
-    { name: 'analyze',  label: 'AI Analysis',      done: fs.existsSync(path.join(outputRoot, 'analysis', 'impact.json')) },
-    { name: 'browse',   label: 'Page Browse',      done: fs.existsSync(path.join(outputRoot, 'pages', 'pages.json')) },
-    { name: 'generate', label: 'Test Generation',  done: listJSONFiles(path.join(outputRoot, 'tests')).length > 0 },
-    { name: 'execute',  label: 'Test Execute',     done: fs.existsSync(path.join(outputRoot, 'results', 'results.json')) },
-    { name: 'report',   label: 'Report',           done: fs.existsSync(path.join(outputRoot, 'reports')) },
+function getStatus(dir: string) {
+  return [
+    { name: 'diff',     label: 'Git Diff',        done: fs.existsSync(path.join(dir, 'diff', 'files.json')) || fs.existsSync(path.join(dir, 'diff', 'projects.json')) },
+    { name: 'trace',    label: 'CodeGraph Trace',  done: fs.existsSync(path.join(dir, 'trace', 'trace.json')) },
+    { name: 'analyze',  label: 'AI Analysis',      done: fs.existsSync(path.join(dir, 'analysis', 'impact.json')) },
+    { name: 'browse',   label: 'Page Browse',      done: fs.existsSync(path.join(dir, 'pages', 'pages.json')) },
+    { name: 'generate', label: 'Test Generation',  done: listJSONFiles(path.join(dir, 'tests')).length > 0 },
+    { name: 'execute',  label: 'Test Execute',     done: fs.existsSync(path.join(dir, 'results', 'results.json')) },
+    { name: 'report',   label: 'Report',           done: fs.existsSync(path.join(dir, 'reports')) },
   ];
+}
 
-  jsonResponse(res, { steps, outputRoot });
+function handleStatus(res: http.ServerResponse, url: URL): void {
+  const dir = url.searchParams.get('output') || outputRoot;
+  jsonResponse(res, { steps: getStatus(dir), outputRoot: dir });
 }
 
 function handleDiff(res: http.ServerResponse): void {
@@ -196,12 +199,14 @@ function handleTasksRun(res: http.ServerResponse, id: string): void {
   const task = tasks.find(t => t.id === id);
   if (!task) return jsonResponse(res, { error: 'Task not found' }, 404);
 
+  const taskOutput = path.join(process.cwd(), 'test-output', id);
   const args = [
     'dist/cli/main.js', 'run',
     '--project', task.project,
     '--base', task.base,
     '--target', task.target,
     '--base-url', task.baseUrl,
+    '--output', taskOutput,
     ...(task.headed ? ['--headed'] : []),
     ...(task.pages ? ['--pages', task.pages] : []),
   ];
@@ -225,7 +230,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (p.startsWith('/api/tasks/') && p.endsWith('/run')) return handleTasksRun(res, p.split('/')[3]);
 
   // API routes
-  if (p === '/api/status')                return handleStatus(res);
+  if (p === '/api/status')                return handleStatus(res, url);
   if (p === '/api/diff')                  return handleDiff(res);
   if (p === '/api/trace')                 return handleTrace(res);
   if (p === '/api/analysis')              return handleAnalysis(res);
