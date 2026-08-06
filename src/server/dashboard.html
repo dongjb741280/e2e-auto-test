@@ -25,7 +25,7 @@
   .step.current .dot { background:var(--accent); animation:pulse 1s infinite; }
   .step.pending .dot { background:var(--border); }
   .step .arrow { color:var(--text2); }
-  .tabs { display:flex; gap:0; padding:0 20px; background:var(--bg2); border-bottom:1px solid var(--border); overflow-x:auto; }
+  .tabs { display:flex; gap:0; padding:0 12px; background:var(--bg2); border-bottom:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .tab { padding:8px 16px; font-size:13px; color:var(--text2); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
   .tab:hover { color:var(--text); }
   .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
@@ -95,6 +95,7 @@
 
 <script>
 const TABS = [
+  { id:'tasks',    label:'任务' },
   { id:'overview', label:'概览' },
   { id:'diff',     label:'Diff' },
   { id:'trace',    label:'Trace' },
@@ -103,9 +104,8 @@ const TABS = [
   { id:'tests',    label:'测试' },
   { id:'results',  label:'结果' },
   { id:'reports',  label:'报告' },
-  { id:'tasks',    label:'任务' },
 ];
-let activeTab = 'overview';
+let activeTab = 'tasks';
 let data = {};
 
 async function api(p) {
@@ -394,7 +394,7 @@ async function renderTasksTab(container) {
         </div>
       </div>
     </details>
-    <div id="taskList">${tasks.map(t => taskCard(t)).join('')}</div>
+    <div id="taskList">${tasks.length ? tasks.map(t => taskCard(t)).join('') : '<div class="empty">暂无任务，点击上方「+ 新建任务」创建</div>'}</div>
     <div id="taskDetail"></div>`;
 }
 
