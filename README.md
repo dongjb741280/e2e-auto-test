@@ -134,7 +134,7 @@ npx e2e-test analyze \
 
 读取 diff 数据，输出结构化分析提示（含文件列表、commits、raw diff），供 Claude Code 使用。
 
-### `serve` — 可视化 Dashboard
+### `serve` — 可视化 Dashboard + 任务管理
 
 ```bash
 npx e2e-test serve \
@@ -143,7 +143,14 @@ npx e2e-test serve \
   [--open]               # 自动打开浏览器
 ```
 
-启动 Web Dashboard，可视化 Pipeline 进度和中间结果。可与 CLI 并行运行——CLI 写入文件，Dashboard 实时刷新。
+启动 Web Dashboard，提供 Pipeline 可视化、中间结果查询、任务配置管理。
+
+**任务管理**（页面顶部下拉选择器）：
+- 创建/删除任务 → 持久化 `.tasks.json`
+- 选择任务 → 所有标签页自动切换为该任务的输出目录
+- 点击「运行」→ 后台执行 Pipeline，输出到 `test-output/<任务ID>/`
+
+**9 个标签页**：任务 / 概览 / Diff / Trace / 分析 / 页面 / 测试 / 结果 / 报告
 
 ```bash
 # 前台运行 (Ctrl+C 停止)
@@ -189,6 +196,8 @@ e2e-auto-test/
 │   └── codegraph-to-obsidian.sh # CodeGraph DB → Obsidian Vault 转换
 ├── tests/examples/              # 示例测试用例
 └── test-output/                 # 运行时输出 (gitignore)
+    ├── .tasks.json              # 任务配置持久化
+    └── <task-id>/               # 每个任务独立输出目录
 ```
 
 ## 输出结构
