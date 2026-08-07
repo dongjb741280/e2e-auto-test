@@ -50,6 +50,8 @@ program
   .option('--no-cleanup', '保留远程仓库克隆 (默认 pipeline 结束后自动清理)')
   .option('--no-clean', '保留上次运行的中间数据 (默认清除 diff/analysis/pages/results)')
   .option('--resume', '跳过 Step 1 (diff 已存在)，从 Step 2 续跑')
+  .option('--no-wait', '不等待 Claude Code 写入文件，暂停后直接退出 (默认等待 600s)')
+  .option('--wait-timeout <seconds>', '等待超时秒数', '600')
   .action(async (options) => {
     try {
       if (!options.resume) {
@@ -69,6 +71,8 @@ program
         cleanup: options.cleanup,
         clean: options.clean,
         resume: options.resume,
+        wait: options.wait,
+        waitTimeout: parseInt(options.waitTimeout, 10),
       });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);

@@ -223,6 +223,85 @@ function handleTasksRun(res: http.ServerResponse, id: string): void {
   jsonResponse(res, { ok: true, pid: proc.pid, taskId: id });
 }
 
+function handleTaskStepRun(res: http.ServerResponse, id: string, step: string): void {
+  const tasks = loadTasks();
+  const task = tasks.find(t => t.id === id);
+  if (!task) return jsonResponse(res, { error: 'Task not found' }, 404);
+
+  const taskOutput = path.join(process.cwd(), 'test-output', id);
+  const cwd = process.cwd();
+  let args: string[];
+  const baseArgs = ['dist/cli/main.js'];
+
+  switch (step) {
+    case 'diff':
+      args = [...baseArgs, 'diff',
+        '--project', task.project,
+        '--base', task.base,
+        '--target', task.target,
+        '--output', path.join(taskOutput, 'diff'),
+      ];
+      break;
+    case 'trace':
+      args = [...baseArgs, 'trace',
+        '--project', task.project,
+        '--from-diff', path.join(taskOutput, 'diff'),
+        '--output', path.join(taskOutput, 'trace'),
+      ];
+      break;
+    case 'analyze':
+      args = [...baseArgs, 'analyze',
+        '--diff-dir', path.join(taskOutput, 'diff'),
+        '--output', path.join(taskOutput, 'analysis'),
+      ];
+      break;
+    case 'browse': {
+      // Read pages from analysis if available
+      let pages = task.pages || '';
+      const impactPath = path.join(taskOutput, 'analysis', 'impact.json');
+      if (!pages && fs.existsSync(impactPath)) {
+        try {
+          const impact = JSON.parse(fs.readFileSync(impactPath, 'utf-8'));
+          pages = (impact.affectedPages || []).map((p: any) => p.route).join(',');
+        } catch { /* use empty */ }
+      }
+      if (!pages) return jsonResponse(res, { error: 'No pages to browse. Run analyze step first or set pages in task config.' }, 400);
+      args = [...baseArgs, 'browse',
+        '--base-url', task.baseUrl,
+        '--pages', pages,
+        '--output', path.join(taskOutput, 'pages'),
+        ...(task.headed ? ['--headed'] : []),
+      ];
+      break;
+    }
+    case 'execute':
+      args = [...baseArgs, 'execute',
+        '--test-dir', path.join(taskOutput, 'tests'),
+        '--base-url', task.baseUrl,
+        '--output', taskOutput,
+        ...(task.headed ? ['--headed'] : []),
+      ];
+      break;
+    case 'report':
+      args = [...baseArgs, 'report',
+        '--results', path.join(taskOutput, 'results', 'results.json'),
+        '--analysis', path.join(taskOutput, 'analysis', 'impact.json'),
+        '--output', path.join(taskOutput, 'reports'),
+        '--project', task.project,
+        '--base-ref', task.base,
+        '--target-ref', task.target,
+        '--base-url', task.baseUrl,
+      ];
+      break;
+    default:
+      return jsonResponse(res, { error: `Unknown step: ${step}. Valid: diff, trace, analyze, browse, execute, report` }, 400);
+  }
+
+  const proc = spawn('node', args, { cwd, stdio: 'ignore' });
+  proc.on('error', () => {});
+  jsonResponse(res, { ok: true, pid: proc.pid, taskId: id, step });
+}
+
 // ---- Router ----
 
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -235,6 +314,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (p.startsWith('/api/tasks/') && req.method === 'PUT')  return handleTasksPut(req, res, p.split('/')[3]);
   if (p.startsWith('/api/tasks/') && req.method === 'DELETE') return handleTasksDelete(res, p.split('/')[3]);
   if (p.startsWith('/api/tasks/') && p.endsWith('/run')) return handleTasksRun(res, p.split('/')[3]);
+  // POST /api/tasks/:id/step/:step
+  const stepMatch = p.match(/^\/api\/tasks\/([^/]+)\/step\/(\w+)$/);
+  if (stepMatch && req.method === 'POST') return handleTaskStepRun(res, stepMatch[1], stepMatch[2]);
 
   // API routes
   if (p === '/api/status')                return handleStatus(res, url);

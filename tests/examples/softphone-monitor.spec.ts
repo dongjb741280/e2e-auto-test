@@ -1,11 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+const TEST_USERNAME = process.env.TEST_USERNAME || 'admin';
+const TEST_PASSWORD = process.env.TEST_PASSWORD || 'password';
+
 test.describe('软电话工作台 — 班长监控功能', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
     await page.waitForLoadState('networkidle');
-    await page.fill('input[placeholder="用户名"]', 'admin');
-    await page.fill('input[placeholder="密码"]', '12345678');
+    await page.fill('input[placeholder="用户名"]', TEST_USERNAME);
+    await page.fill('input[placeholder="密码"]', TEST_PASSWORD);
     await page.click('button:has-text("登 录")');
     await page.waitForTimeout(2000);
     await page.goto('/softphone');

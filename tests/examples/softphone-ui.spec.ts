@@ -1,12 +1,15 @@
 import { test, expect } from '@playwright/test';
 
+const TEST_USERNAME = process.env.TEST_USERNAME || 'admin';
+const TEST_PASSWORD = process.env.TEST_PASSWORD || 'password';
+
 test.describe('软电话工作台 — UI 布局', () => {
   test.beforeEach(async ({ page }) => {
     // 登录系统
     await page.goto('/login');
     await page.waitForLoadState('networkidle');
-    await page.fill('input[placeholder="用户名"]', 'admin');
-    await page.fill('input[placeholder="密码"]', '12345678');
+    await page.fill('input[placeholder="用户名"]', TEST_USERNAME);
+    await page.fill('input[placeholder="密码"]', TEST_PASSWORD);
     await page.click('button:has-text("登 录")');
     // 登录成功后可能跳转到 / 或 /softphone
     await page.waitForTimeout(2000);

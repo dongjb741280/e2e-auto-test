@@ -203,7 +203,8 @@ function traceRecursive(
   dbPath: string,
   filePath: string,
   depth: number,
-  visited: Set<string>
+  visited: Set<string>,
+  frontendFileCache?: Map<string, string>,
 ): { hops: TraceHop[]; pages: string[] } {
   if (depth <= 0 || visited.has(filePath)) return { hops: [], pages: [] };
   visited.add(filePath);
@@ -215,21 +216,11 @@ function traceRecursive(
   // Cross-language bridge: backend route → frontend API consumer
   // CodeGraph tracks intra-language edges only. Backend→frontend bridge
   // requires searching the actual file content for API path strings.
+  // Uses a pre-loaded content cache to avoid per-file fs.readFileSync calls.
   if (/\.(java|go|py|kt)$/.test(filePath)) {
     const routeNodes = queryJSON(dbPath, `
       SELECT name, signature FROM nodes
       WHERE file_path = '${filePath}' AND kind = 'route'
-    `);
-
-    // Get list of frontend source files from CodeGraph
-    const frontendFiles = queryJSON(dbPath, `
-      SELECT DISTINCT file_path FROM nodes
-      WHERE file_path NOT LIKE '%.java' AND file_path NOT LIKE '%.go'
-        AND file_path NOT LIKE '%.py' AND file_path NOT LIKE '%.kt'
-        AND file_path NOT LIKE '%.xml' AND file_path NOT LIKE '%.properties'
-        AND file_path NOT LIKE '.agents/%' AND file_path NOT LIKE '.claude/%'
-        AND file_path NOT LIKE 'node_modules/%'
-      ORDER BY file_path
     `);
 
     const seenFrontendFiles = new Set<string>();
@@ -239,20 +230,18 @@ function traceRecursive(
       // Also try partial paths: "/admin/menu/{menuId}" → "/admin/menu"
       const partialPath = apiPath.replace(/\/\{[^}]+\}/g, '');
 
-      for (const ff of frontendFiles) {
-        if (seenFrontendFiles.has(ff.file_path)) continue;
-        const fullPath = path.join(path.dirname(dbPath), '..', ff.file_path);
-        try {
-          const content = fs.readFileSync(fullPath, 'utf-8');
+      if (frontendFileCache) {
+        for (const [file, content] of frontendFileCache) {
+          if (seenFrontendFiles.has(file)) continue;
           if (content.includes(apiPath) || (partialPath !== apiPath && content.includes(partialPath))) {
-            seenFrontendFiles.add(ff.file_path);
+            seenFrontendFiles.add(file);
             callers.push({
-              file: ff.file_path,
+              file,
               relation: 'api-consumer',
               viaSymbol: `HTTP ${apiPath}`,
             });
           }
-        } catch { /* file not found, skip */ }
+        }
       }
     }
   }
@@ -274,7 +263,7 @@ function traceRecursive(
       pages.push(caller.file);
     } else {
       hops.push(hop);
-      const sub = traceRecursive(dbPath, caller.file, depth - 1, visited);
+      const sub = traceRecursive(dbPath, caller.file, depth - 1, visited, frontendFileCache);
       hops.push(...sub.hops);
       pages.push(...sub.pages);
     }
@@ -302,6 +291,28 @@ export function traceImpact(projectPath: string, files: string[], traceDepth: nu
   }
 
   const dbPath = getDbPath(projectPath);
+  const projectRoot = path.dirname(dbPath);
+
+  // Pre-load frontend file contents for cross-language bridge lookups.
+  // This avoids O(routes × files) individual fs.readFileSync calls in traceRecursive.
+  const frontendFiles = queryJSON(dbPath, `
+    SELECT DISTINCT file_path FROM nodes
+    WHERE file_path NOT LIKE '%.java' AND file_path NOT LIKE '%.go'
+      AND file_path NOT LIKE '%.py' AND file_path NOT LIKE '%.kt'
+      AND file_path NOT LIKE '%.xml' AND file_path NOT LIKE '%.properties'
+      AND file_path NOT LIKE '.agents/%' AND file_path NOT LIKE '.claude/%'
+      AND file_path NOT LIKE 'node_modules/%'
+    ORDER BY file_path
+  `);
+
+  const frontendFileCache = new Map<string, string>();
+  for (const ff of frontendFiles) {
+    const fullPath = path.join(projectRoot, ff.file_path);
+    try {
+      frontendFileCache.set(ff.file_path, fs.readFileSync(fullPath, 'utf-8'));
+    } catch { /* file not found, skip */ }
+  }
+
   const chains: FileChain[] = [];
   const pageSet = new Set<string>();
 
@@ -311,7 +322,7 @@ export function traceImpact(projectPath: string, files: string[], traceDepth: nu
     if (/(\/|^)\.agents\/|(\/|^)\.claude\/|(\/|^)\.github\//.test(file)) continue;
 
     const symbols = extractExports(dbPath, file);
-    const { hops, pages } = traceRecursive(dbPath, file, traceDepth, new Set());
+    const { hops, pages } = traceRecursive(dbPath, file, traceDepth, new Set(), frontendFileCache);
 
     if (hops.length > 0 || pages.length > 0) {
       chains.push({

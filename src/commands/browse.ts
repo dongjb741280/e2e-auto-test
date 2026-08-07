@@ -2,13 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { launchBrowser, closeBrowser } from '../browser/manager';
 import { scrapePages } from '../browser/page-scraper';
-import type { PageSnapshot } from '../types';
+import type { PageSnapshot, ProjectConfig } from '../types';
 
 export interface BrowseCommandOptions {
   baseUrl: string;
   pages: string[];
   output?: string;
   headed?: boolean;
+  /** Auto-login credentials from project config */
+  login?: ProjectConfig['login'];
 }
 
 export async function browseCommand(options: BrowseCommandOptions): Promise<void> {
@@ -26,6 +28,18 @@ export async function browseCommand(options: BrowseCommandOptions): Promise<void
   const instance = await launchBrowser({ headless: !headed });
 
   try {
+    // Auto-login if credentials are configured
+    if (options.login) {
+      const { login } = options;
+      console.log(`  Auto-login: ${baseUrl}${login.url}`);
+      await instance.page.goto(`${baseUrl}${login.url}`, { waitUntil: 'networkidle' });
+      await instance.page.fill(login.selectors.username, login.credentials.username);
+      await instance.page.fill(login.selectors.password, login.credentials.password);
+      await instance.page.click(login.selectors.submit);
+      await instance.page.waitForLoadState('networkidle');
+      console.log('  Login completed');
+    }
+
     const snapshots = await scrapePages(instance.page, pages, baseUrl, outputDir);
 
     // Save summary
